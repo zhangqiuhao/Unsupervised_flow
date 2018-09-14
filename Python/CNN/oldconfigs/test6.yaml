@@ -1,0 +1,34 @@
+# device configuration
+GPU_FRACTION : 1.0
+SUMMARY_STEPS : 10
+CHECKPOINTS_SECS : 60
+
+# model options
+MODEL_DIR : '/home/klein/net/flow/test6'
+MODEL_FN : 'CNN.Net'
+
+# data options
+INPUT_FN : 'tools.DataInputOld'
+TRAIN_DATA_LOCATION : '/home/klein/U/gridmapsFlow/train/shuffled.csv'
+EVAL_DATA_LOCATION : '/home/klein/U/gridmapsFlow/eval/shuffled.csv'
+EVAL_EXAMPLES : 750
+IMG_SIZE : 1200
+CROP_CENTER : 600
+POOL_2_AT_BEGINNING : True
+
+# network hyper parameter configuration
+BATCH_SIZE : 25
+LEARNING_RATE : 0.001
+NUM_EPOCHS : 1000
+DROPOUT: 0.0
+LOSS_WEIGHT_OCCUPIED : 3
+LOSS : 'l2'  # 'l1', 'l2'
+
+# network architecture:
+CONVOLUTION_LAYERS :
+  SIZES : [7, 7, 7, 7, 7, 7, 7, 7]
+  FILTERS : [64, 64, 64, 64, 64, 32, 16, 2]
+  DILATION : [1, 1, 1, 1, 1, 1, 1, 1]
+  POOLING : [0, 0, 0, 0, 0, 0, 0, 0]
+  ACTIVATION : ['relu', 'relu', 'relu', 'relu', 'relu', 'relu', 'relu', 'none']
+  BATCHNORM : [True, True, True, True, True, True, True, False]

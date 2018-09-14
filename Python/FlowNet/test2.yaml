@@ -1,0 +1,24 @@
+# device configuration
+GPU_FRACTION : 0.5
+SUMMARY_STEPS : 10
+CHECKPOINTS_SECS : 60
+
+# model options
+MODEL_DIR : '/home/klein/U/net/flownet/flownet2'
+MODEL_FN : 'FlowNet.FlowNetGridmap'
+
+# data options
+INPUT_FN : 'tools.DataInput'
+TRAIN_DATA_LOCATION : '/home/klein/U/gridmapsFlow/train/shuffled.csv'
+EVAL_DATA_LOCATION : '/home/klein/U/gridmapsFlow/eval/all.csv'
+EVAL_EXAMPLES : 1400
+IMG_SIZE : 1200
+RESIZE: 320
+
+# network hyper parameter configuration
+BATCH_SIZE : 50
+LEARNING_RATE : 0.0001
+NUM_EPOCHS : 1000
+DROPOUT: 0.0
+LOSS_WEIGHT_OCCUPIED : 3
+LOSS : 'l2'  # 'l1', 'l2'

@@ -1,0 +1,22 @@
+# device configuration
+GPU_FRACTION : 1.0
+SUMMARY_STEPS : 20
+CHECKPOINTS_SECS : 1600
+
+# model options
+MODEL_DIR : '/home/klein/U/net/flownet/activation_fixed/flownet_SD'
+MODEL_FN : 'FlowNet.FlowNet_SD'
+
+# data options
+INPUT_FN : 'tools.DataInputCylindrical'
+TRAIN_DATA_LOCATION : '/home/klein/U/depthimageFlow/train/shuffled_small_displacements.csv'
+EVAL_DATA_LOCATION : '/home/klein/U/depthimageFlow/eval/shuffled_small_displacements.csv'
+EVAL_EXAMPLES : 1599
+IMG_SIZE : 1200
+
+# network hyper parameter configuration
+BATCH_SIZE : 30
+LEARNING_RATE : 0.00001
+NUM_EPOCHS : 80
+LOSS_WEIGHT_OCCUPIED : 3
+LOSS : 'l2'  # 'l1', 'l2'

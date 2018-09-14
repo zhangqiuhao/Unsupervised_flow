@@ -1,0 +1,19 @@
+# device configuration
+GPU_FRACTION : 1.0
+SUMMARY_STEPS : 20
+CHECKPOINTS_SECS : 120
+
+# model options
+MODEL_DIR : '/home/klein/U/net/flownet/flownet_2'
+
+# data options
+TRAIN_DATA_LOCATION : '/home/klein/U/depthimageFlow/train/shuffled.csv'
+EVAL_DATA_LOCATION : '/home/klein/U/depthimageFlow/eval/all.csv'
+EVAL_EXAMPLES : 2790
+
+# network hyper parameter configuration
+BATCH_SIZE : 40
+LEARNING_RATE : 0.0001
+NUM_EPOCHS : 1000
+LOSS_WEIGHT_OCCUPIED : 3
+LOSS : 'l2'  # 'l1'
