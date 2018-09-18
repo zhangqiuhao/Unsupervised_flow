@@ -155,7 +155,7 @@ class KITTIInput(Input):
 
     def input_train_2012(self, hold_out_inv=None):
         print("start inputing train 2012")
-        return self._input_train('data',
+        return self._input_train('evaluate',
                                  'data_stereo_flow/training',
                                  hold_out_inv)
 

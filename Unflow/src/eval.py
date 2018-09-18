@@ -193,6 +193,7 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input):
             R = 0.0
             t = matrix_input.return_matrix(2)[:,3]
             file = open("/home/zhang/odo.txt", "w")
+            file_err = open("/home/zhang/odo_err.txt", "w")
 
             restore_networks(sess, params, ckpt, ckpt_path)
 
@@ -233,7 +234,7 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input):
                     if num_iters > 0:
                         sys.stdout.write('\r')
 
-                    R,t = _evaluate(file, R, t, matrix_input, num_iters, image_results[3], image_results[4], image_results[5], image_results[6])
+                    R,t = _evaluate(file, file_err, R, t,  matrix_input, num_iters, image_results[3], image_results[4], image_results[5], image_results[6])
 
                     num_iters += 1
                     sys.stdout.write("-- evaluating '{}': {}/{}"
@@ -249,7 +250,7 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input):
 
     return image_lists, image_names
 
-def _evaluate(file, old_R, old_t, matrix_input, num_iters, img_gray, img_array, flow_u_array, flow_v_array):
+def _evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, img_gray, img_array, flow_u_array, flow_v_array):
     height = img_gray.shape[1]
     width = img_gray.shape[2]
 
@@ -271,8 +272,8 @@ def _evaluate(file, old_R, old_t, matrix_input, num_iters, img_gray, img_array, 
                     #output_flow[int(output_u), int(output_v)] = img_array[num_pixel]
                     #output[u, v] = img_array[num_pixel]
 
-                    matrix_im1.append([output_u, output_v, 0])
-                    matrix_im2.append([u, v, 0])
+                    matrix_im1.append([height-output_u, output_v-width/2.0, 0])
+                    matrix_im2.append([height-u, v-width/2.0, 0])
                     count += 1
 
     #img = Image.fromarray(output)
@@ -287,20 +288,39 @@ def _evaluate(file, old_R, old_t, matrix_input, num_iters, img_gray, img_array, 
     print("Number of points: ",count)
 
     R, c, t = ralign(matrix_im1, matrix_im2)
-    #print(matrix_real[:,0:2].shape)
-    #angles_real = rotationMatrixToEulerAngles(matrix_real[:,:3])
-    #R = np.dot(old_R, R)
-    #t = np.transpose(np.add(-t * 0.1, np.transpose(old_t)))
 
-    t_x = t[0] * np.cos(old_R) - t[1] * np.sin(old_R)
+    #read now and previous groundtruth
+    matrix_gt = matrix_input.return_matrix(num_iters + 3)
+    matrix_gt_pr = matrix_input.return_matrix(num_iters + 2)
+    R_gt = matrix_gt[:,0:3]
+    t_gt = matrix_gt[:,3]
+    R_gt_pr = matrix_gt_pr[:,0:3]
+    t_gt_pr = matrix_gt_pr[:,3]
+    R_gt = rotationMatrixToEulerAngles(R_gt)[1]
+    R_gt_pr = rotationMatrixToEulerAngles(R_gt_pr)[1]
+
+    delta_R_is = R_gt - R_gt_pr
+    delta_t_x = t_gt[2] - t_gt_pr[2]
+    delta_t_y = -(t_gt[0] - t_gt_pr[0])
+
+    t_x = -(t[0] * np.cos(old_R) - t[1] * np.sin(old_R))
     t_y = t[0] * np.sin(old_R) + t[1] * np.cos(old_R)
 
-    R = old_R - rotationMatrixToEulerAngles(R)[2]
-    #print("angles is: ", angles_is, "\nreal angles:  ", angles_real)
-    t = [(t_x * 0.1+old_t[0]).item(0) , (t_y * 0.1+old_t[1]).item(0), (t[2]*0.1+old_t[2]).item(0)]
-    file.write("0 0 0 " + str(t[0]) + " 0 0 0 " + str(t[1]) + " 0 0 0 " + str(t[2]) + "\n")
+    R_now = - rotationMatrixToEulerAngles(R)[2]
 
-    print("Rotation angle: ", R, "Translation: ", t)
+    #print("delta R ", delta_R_is, " delta t_x ", delta_t_x, " delta t_y ", delta_t_y)
+    R_err = R_now - delta_R_is
+    t_x_err = t_x - delta_t_x.item(0)
+    t_y_err = t_y - delta_t_y.item(0)
+    print("R_err: ", R_err, " t_x_err: ", t_x_err, " t_y_err: ", t_y_err)
+
+    R = old_R + R_now
+    #print("angles is: ", angles_is, "\nreal angles:  ", angles_real)
+    t = [(t_x+old_t[0]).item(0) , (t_y+old_t[1]).item(0)]
+    file.write("0 0 0 " + str(t[0]) + " 0 0 0 " + str(t[1]) + " 0 0 0 0" + "\n")
+    file_err.write(str(R_err) + " " + str(t_x_err) +  " " + str(t_y_err) + "\n")
+
+    #print("Rotation angle: ", R, "Translation: ", t)
     #matrix_is = np.column_stack((R,t))
     #diff = np.subtract(matrix_real, matrix_is)
 
@@ -345,7 +365,7 @@ def ralign(X,Y):
     c = np.trace(np.dot(np.diag(D), S)) / sx
     t = my - c * np.dot(R, mx)
 
-    return R,c,t
+    return R,c,t*0.1
 
 
 # Checks if a matrix is a valid rotation matrix.
