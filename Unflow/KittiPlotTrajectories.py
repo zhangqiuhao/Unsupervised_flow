@@ -27,7 +27,7 @@ def main(args):
 
     ########
     start = 0
-    end = 100
+    end = 4000
     ########
 
     points_oxt = points_oxt[start:end]
@@ -43,6 +43,8 @@ def main(args):
     ax.add_patch(patches.PathPatch(path_oxt, facecolor='none', edgecolor='C0'))
     ax.add_patch(patches.PathPatch(path_estimation1, facecolor='none', edgecolor='C1'))
     ax.set_aspect('equal', 'datalim')
+    ax.set_xlabel('x in meter')
+    ax.set_ylabel('y in meter')
 
     plt.autoscale(enable=True)
     plt.show()
