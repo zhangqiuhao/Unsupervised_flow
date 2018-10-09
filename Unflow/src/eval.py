@@ -6,8 +6,7 @@ import tensorflow as tf
 import numpy as np
 import numpy.ma
 import png
-from PIL import Image
-import math
+import timeit
 
 from e2eflow.core.flow_util import flow_to_color, flow_error_avg, outlier_pct
 from e2eflow.core.flow_util import flow_error_image
@@ -23,6 +22,7 @@ from e2eflow.gui import display
 from e2eflow.core.losses import DISOCC_THRESH, occlusion, create_outgoing_mask
 from e2eflow.util import convert_input_strings
 from Matrix import Matrix
+from evaluation_funtion import evaluate
 
 
 tf.app.flags.DEFINE_string('dataset', 'kitti',
@@ -33,7 +33,7 @@ tf.app.flags.DEFINE_string('ex', '',
                            'Experiment name(s) (can be comma separated list).')
 tf.app.flags.DEFINE_string('eval_txt', '08',
                            'Number of evaluate dataset')
-tf.app.flags.DEFINE_integer('num', 4000,
+tf.app.flags.DEFINE_integer('num', 100,
                             'Number of examples to evaluate. Set to -1 to evaluate all.')
 tf.app.flags.DEFINE_integer('num_vis', -1,
                             'Number of evalutations to visualize. Set to -1 to visualize all.')
@@ -41,7 +41,7 @@ tf.app.flags.DEFINE_string('gpu', '0',
                            'GPU device to evaluate on.')
 tf.app.flags.DEFINE_boolean('output_benchmark', False,
                             'Output raw flow files.')
-tf.app.flags.DEFINE_boolean('output_visual', True,
+tf.app.flags.DEFINE_boolean('output_visual', False,
                             'Output flow visualization files.')
 tf.app.flags.DEFINE_boolean('output_backward', False,
                             'Output backward flow files.')
@@ -192,8 +192,8 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input):
 
             R = 0.0
             t = matrix_input.return_matrix(2)[:,3]
-            file = open("/home/zhang/odo.txt", "w")
-            file_err = open("/home/zhang/odo_err.txt", "w")
+            file = open("/home/zhang/odo_.txt", "w")
+            file_err = open("/home/zhang/odo_err_.txt", "w")
 
             restore_networks(sess, params, ckpt, ckpt_path)
 
@@ -211,12 +211,12 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input):
                     flow_fw_res, flow_bw_res, flow_fw_int16_res, flow_bw_int16_res = all_results[:4]
                     all_results = all_results[4:]
                     image_results = all_results[:num_ims]
-                    scalar_results = all_results[num_ims:]
+                    #scalar_results = all_results[num_ims:]
                     iterstr = str(num_iters).zfill(6)
                     if FLAGS.output_visual:
                         path_flow = os.path.join(exp_out_dir, iterstr + '_flow.png')
-                        path_overlay = os.path.join(exp_out_dir, iterstr + '_overlay.png')
-                        path_fw_overlay = os.path.join(exp_out_dir, iterstr + '_fw.png')
+                        #path_overlay = os.path.join(exp_out_dir, iterstr + '_overlay.png')
+                        #path_fw_overlay = os.path.join(exp_out_dir, iterstr + '_fw.png')
                         #write_rgb_png(image_results[0] * 255, path_overlay)
                         #write_rgb_png(image_results[1] * 255, path_fw_overlay)
                         write_rgb_png(image_results[2] * 255, path_flow)
@@ -234,7 +234,10 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input):
                     if num_iters > 0:
                         sys.stdout.write('\r')
 
-                    R,t = _evaluate(file, file_err, R, t,  matrix_input, num_iters, image_results[3], image_results[4], image_results[5], image_results[6])
+                    start = timeit.default_timer()
+                    R,t = evaluate(file, file_err, R, t,  matrix_input, num_iters, image_results[3], image_results[4], image_results[5], image_results[6])
+                    stop = timeit.default_timer()
+                    print('Time: ', stop - start)
 
                     num_iters += 1
                     sys.stdout.write("-- evaluating '{}': {}/{}"
@@ -247,156 +250,6 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input):
             file.close()
             coord.request_stop()
             coord.join(threads)
-
-    return image_lists, image_names
-
-def _evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, img_gray, img_array, flow_u_array, flow_v_array):
-    height = img_gray.shape[1]
-    width = img_gray.shape[2]
-
-    matrix_im1 = []
-    matrix_im2 = []
-    count = 0
-
-    output = np.zeros([height, width], 'uint8')
-    output_flow = np.zeros([height, width], 'uint8')
-
-    for u in range(height):
-        for v in range(width):
-            num_pixel = v + u * width
-            if img_array[num_pixel] > 0.001 and abs(flow_u_array[num_pixel]) > 0.001 and abs(flow_v_array[num_pixel]) > 0.001:
-                output_u = u - flow_v_array[num_pixel]
-                output_v = v - flow_u_array[num_pixel]
-                if  0 <= int(output_u) < height and 0 <= int(output_v) < width:
-
-                    #output_flow[int(output_u), int(output_v)] = img_array[num_pixel]
-                    #output[u, v] = img_array[num_pixel]
-
-                    matrix_im1.append([height-output_u, output_v-width/2.0, 0])
-                    matrix_im2.append([height-u, v-width/2.0, 0])
-                    count += 1
-
-    #img = Image.fromarray(output)
-    #img_flow = Image.fromarray(output_flow)
-
-    #img.save('../../out/' + str(num_iters) + '_output.jpeg')
-    #img_flow.save('../../out/' + str(num_iters) + '_output_flow.jpeg')
-
-    matrix_im1 = np.transpose(np.asarray(matrix_im1))
-    matrix_im2 = np.transpose(np.asarray(matrix_im2))
-
-    print("Number of points: ",count)
-
-    R, c, t = ralign(matrix_im1, matrix_im2)
-
-    #read now and previous groundtruth
-    matrix_gt = matrix_input.return_matrix(num_iters + 3)
-    matrix_gt_pr = matrix_input.return_matrix(num_iters + 2)
-    R_gt = matrix_gt[:,0:3]
-    t_gt = matrix_gt[:,3]
-    R_gt_pr = matrix_gt_pr[:,0:3]
-    t_gt_pr = matrix_gt_pr[:,3]
-    R_gt = rotationMatrixToEulerAngles(R_gt)[1]
-    R_gt_pr = rotationMatrixToEulerAngles(R_gt_pr)[1]
-
-    delta_R_is = R_gt - R_gt_pr
-    delta_t_x = t_gt[2] - t_gt_pr[2]
-    delta_t_y = -(t_gt[0] - t_gt_pr[0])
-
-    t_x = -(t[0] * np.cos(old_R) - t[1] * np.sin(old_R))
-    t_y = t[0] * np.sin(old_R) + t[1] * np.cos(old_R)
-
-    R_now = - rotationMatrixToEulerAngles(R)[2]
-
-    #print("delta R ", delta_R_is, " delta t_x ", delta_t_x, " delta t_y ", delta_t_y)
-    R_err = R_now - delta_R_is
-    t_x_err = t_x - delta_t_x.item(0)
-    t_y_err = t_y - delta_t_y.item(0)
-    print("R_err: ", R_err, " t_x_err: ", t_x_err, " t_y_err: ", t_y_err)
-
-    R = old_R + R_now
-    #print("angles is: ", angles_is, "\nreal angles:  ", angles_real)
-    t = [(t_x+old_t[0]).item(0) , (t_y+old_t[1]).item(0)]
-    file.write("0 0 0 " + str(t[0]) + " 0 0 0 " + str(t[1]) + " 0 0 0 0" + "\n")
-    file_err.write(str(R_err) + " " + str(t_x_err) +  " " + str(t_y_err) + "\n")
-
-    #print("Rotation angle: ", R, "Translation: ", t)
-    #matrix_is = np.column_stack((R,t))
-    #diff = np.subtract(matrix_real, matrix_is)
-
-    #print("\nRotation matrix=\n", R, "\nScaling coefficient=", c, "\nTranslation vector=", t)
-    #print("Error_matrix=\n", diff)
-
-    return R, t
-
-def ralign(X,Y):
-    m, n = X.shape
-
-    mx = X.mean(1)
-    my = Y.mean(1)
-    Xc =  X - np.tile(mx, (n, 1)).T
-    Yc =  Y - np.tile(my, (n, 1)).T
-
-    sx = np.mean(np.sum(Xc*Xc, 0))
-    sy = np.mean(np.sum(Yc*Yc, 0))
-
-    Sxy = np.dot(Yc, Xc.T) / n
-
-    U,D,V = np.linalg.svd(Sxy,full_matrices=True,compute_uv=True)
-    V=V.T.copy()
-    #print U,"\n\n",D,"\n\n",V
-    r = np.rank(Sxy)
-    d = np.linalg.det(Sxy)
-    S = np.eye(m)
-    if r > (m - 1):
-        if ( np.det(Sxy) < 0 ):
-            S[m, m] = -1;
-        elif (r == m - 1):
-            if (np.det(U) * np.det(V) < 0):
-                S[m, m] = -1
-        else:
-            R = np.eye(2)
-            c = 1
-            t = np.zeros(2)
-            return R,c,t
-
-    R = np.dot( np.dot(U, S ), V.T)
-
-    c = np.trace(np.dot(np.diag(D), S)) / sx
-    t = my - c * np.dot(R, mx)
-
-    return R,c,t*0.1
-
-
-# Checks if a matrix is a valid rotation matrix.
-def isRotationMatrix(R):
-    Rt = np.transpose(R)
-    shouldBeIdentity = np.dot(Rt, R)
-    I = np.identity(3, dtype=R.dtype)
-    n = np.linalg.norm(I - shouldBeIdentity)
-    return n < 1e-6
-
-
-# Calculates rotation matrix to euler angles
-# The result is the same as MATLAB except the order
-# of the euler angles ( x and z are swapped ).
-def rotationMatrixToEulerAngles(R):
-    assert (isRotationMatrix(R))
-
-    sy = math.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
-
-    singular = sy < 1e-6
-
-    if not singular:
-        x = math.atan2(R[2, 1], R[2, 2])
-        y = math.atan2(-R[2, 0], sy)
-        z = math.atan2(R[1, 0], R[0, 0])
-    else:
-        x = math.atan2(-R[1, 2], R[1, 1])
-        y = math.atan2(-R[2, 0], sy)
-        z = 0
-
-    return np.array([x, y, z])
 
 def main(argv=None):
     os.environ['CUDA_VISIBLE_DEVICES'] = FLAGS.gpu
@@ -416,12 +269,8 @@ def main(argv=None):
                                  dims=(640,640))
     input_fn = getattr(data_input, 'input_' + FLAGS.variant)
 
-    results = []
     for name in FLAGS.ex.split(','):
-        result, image_names = _evaluate_experiment(name, input_fn, data_input, matrix_input)
-        results.append(result)
-
-    #display(results, image_names)
+        _evaluate_experiment(name, input_fn, data_input, matrix_input)
 
 if __name__ == '__main__':
     tf.app.run()
