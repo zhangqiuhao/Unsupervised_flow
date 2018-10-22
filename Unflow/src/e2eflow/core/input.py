@@ -45,12 +45,13 @@ class Input():
     mean = [104.920005, 110.1753, 114.785955]
     stddev = 1 / 0.0039216
 
-    def __init__(self, data, batch_size, dims, *,
+    def __init__(self, data, batch_size, dims, layers, *,
                  num_threads=1, normalize=True,
                  skipped_frames=False):
         assert len(dims) == 2
         self.data = data
         self.dims = dims
+        self.layers = layers
         self.batch_size = batch_size
         self.num_threads = num_threads
         self.normalize = normalize
@@ -63,7 +64,7 @@ class Input():
 
     def _resize_image_fixed(self, image):
         height, width = self.dims
-        return tf.reshape(self._resize_crop_or_pad(image), [height, width, 3])
+        return tf.reshape(self._resize_crop_or_pad(image), [height, width, len(self.layers)])
 
     def _normalize_image(self, image):
         return (image - self.mean) / self.stddev
@@ -101,8 +102,8 @@ class Input():
             filenames_1 = list(filenames_1)
             filenames_2 = list(filenames_2)
 
-        input_1 = read_png_image(filenames_1, 1)
-        input_2 = read_png_image(filenames_2, 1)
+        input_1 = read_png_image(filenames_1, self.layers, 1)
+        input_2 = read_png_image(filenames_2, self.layers, 1)
         image_1 = self._preprocess_image(input_1)
         image_2 = self._preprocess_image(input_2)
         return tf.shape(input_1), image_1, image_2
@@ -144,7 +145,9 @@ class Input():
 
         filenames = []
         for dir_path in data_dirs:
-            files = os.listdir(dir_path)
+            calib_path = os.path.join(dir_path, 'calib')
+            dir_path = os.path.join(dir_path, 'gridmap')
+            files = os.listdir(calib_path)
             files.sort()
             if sequence:
                 steps = [1 + s for s in skip]
@@ -161,8 +164,10 @@ class Input():
                         num_second = frame_name_to_num(files[i+1])
                         if num_first + 1 != num_second:
                             continue
-                    fn1 = os.path.join(dir_path, files[i])
-                    fn2 = os.path.join(dir_path, files[i + 1])
+                    file_i = files[i].split('.')[0]
+                    file_i1 = files[i + 1].split('.')[0]
+                    fn1 = os.path.join(dir_path, file_i)
+                    fn2 = os.path.join(dir_path, file_i1)
                     filenames.append((fn1, fn2))
 
         random.seed(seed)
@@ -183,26 +188,27 @@ class Input():
         filenames_1 = list(filenames_1)
         filenames_2 = list(filenames_2)
 
+        num_layer = len(self.layers)
+
         with tf.variable_scope('train_inputs'):
-            image_1 = read_png_image(filenames_1)
-            image_2 = read_png_image(filenames_2)
+            image_1 = read_png_image(filenames_1, self.layers, self.dims)
+            image_2 = read_png_image(filenames_2, self.layers, self.dims)
 
             if needs_crop:
                 #if center_crop:
                 #    image_1 = tf.image.resize_image_with_crop_or_pad(image_1, height, width)
                 #    image_2 = tf.image.resize_image_with_crop_or_pad(image_1, height, width)
                 #else:
-                image_1, image_2 = random_crop([image_1, image_2], [height, width, 3])
+                image_1, image_2 = random_crop([image_1, image_2], [height, width, num_layer])
             else:
-                image_1 = tf.reshape(image_1, [height, width, 3])
-                image_2 = tf.reshape(image_2, [height, width, 3])
+                image_1 = tf.reshape(image_1, [height, width, num_layer])
+                image_2 = tf.reshape(image_2, [height, width, num_layer])
 
             if self.normalize:
                 image_1 = self._normalize_image(image_1)
                 image_2 = self._normalize_image(image_2)
 
             print(image_1.shape)
-            print(image_2.shape)
 
             return tf.train.batch(
                 [image_1, image_2],
@@ -210,12 +216,26 @@ class Input():
                 num_threads=self.num_threads)
 
 
-def read_png_image(filenames, num_epochs=None):
+def read_png_image(filenames, layers, dims, num_epochs=None):
     """Given a list of filenames, constructs a reader op for images."""
-    filename_queue = tf.train.string_input_producer(filenames,
-        shuffle=False, capacity=len(filenames))
+    height, width = dims
+    image = tf.Variable(tf.zeros([height, width, len(layers)]))
     reader = tf.WholeFileReader()
-    _, value = reader.read(filename_queue)
-    image_uint8 = tf.image.decode_png(value, channels=3)
-    image = tf.cast(image_uint8, tf.float32)
+    if layers is not None:
+        for i, layer in enumerate(layers):
+            layer = '_' + layer + '.png'
+            filenames_with_layer = [i+layer for i in filenames]
+            filename_queue = tf.train.string_input_producer(filenames_with_layer,
+                                                            shuffle=False, capacity=len(filenames_with_layer))
+            _, value = reader.read(filename_queue)
+            image_uint8 = tf.image.decode_png(value, channels=1)
+            image_float32 = tf.cast(image_uint8, tf.float32)
+            tf.assign(image[:, :, i], image_float32)
+    else:
+        filenames = [i+'.png' for i in filenames]
+        filename_queue = tf.train.string_input_producer(filenames,
+            shuffle=False, capacity=len(filenames))
+        _, value = reader.read(filename_queue)
+        image_uint8 = tf.image.decode_png(value, channels=3)
+        image = tf.cast(image_uint8, tf.float32)
     return image

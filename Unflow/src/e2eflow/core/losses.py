@@ -25,6 +25,8 @@ def compute_losses(im1, im2, flow_fw, flow_bw,
     im_diff_fw = im1 - im2_warped
     im_diff_bw = im2 - im1_warped
 
+
+
     disocc_fw = tf.cast(forward_warp(flow_fw) < DISOCC_THRESH, tf.float32)
     disocc_bw = tf.cast(forward_warp(flow_bw) < DISOCC_THRESH, tf.float32)
 

@@ -300,26 +300,6 @@ def main(argv=None):
         data_input = KITTIInput(data, batch_size=1, normalize=False,
                                  dims=(640,640))
         inputs = getattr(data_input, 'input_' + FLAGS.variant)()
-    elif FLAGS.dataset == 'chairs':
-        data = ChairsData(dirs['data'], development=True)
-        data_input = ChairsInput(data, batch_size=1, normalize=False,
-                                 dims=(384,512))
-        if FLAGS.variant == 'test_2015' and FLAGS.num == -1:
-            FLAGS.num = 200
-        elif FLAGS.variant == 'test_2012' and FLAGS.num == -1:
-            FLAGS.num = 195
-    elif FLAGS.dataset == 'sintel':
-        data = SintelData(dirs['data'], development=True)
-        data_input = SintelInput(data, batch_size=1, normalize=False,
-                                 dims=(512,1024))
-    if FLAGS.variant in ['test_clean', 'test_final'] and FLAGS.num == -1:
-        FLAGS.num = 552
-    elif FLAGS.dataset == 'mdb':
-        data = MiddleburyData(dirs['data'], development=True)
-        data_input = MiddleburyInput(data, batch_size=1, normalize=False,
-                                     dims=(512,640))
-        if FLAGS.variant == 'test' and FLAGS.num == -1:
-            FLAGS.num = 12
 
     input_fn = getattr(data_input, 'input_' + FLAGS.variant)
 

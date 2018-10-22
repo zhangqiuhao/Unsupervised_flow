@@ -24,7 +24,7 @@ def flow_to_color(flow, mask=None, max_flow=None):
         flow: tensor of shape [num_batch, height, width, 2].
         mask: flow validity mask of shape [num_batch, height, width, 1].
     """
-    n = 8
+    n = 2
     num_batch, height, width, _ = tf.unstack(tf.shape(flow))
     mask = tf.ones([num_batch, height, width, 1]) if mask is None else mask
     flow_u, flow_v = tf.unstack(flow, axis=3)

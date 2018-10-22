@@ -139,7 +139,7 @@ class Trainer():
         assert (max_iter - start_iter + 1) % save_interval == 0
         for i in range(start_iter, max_iter + 1, save_interval):
             self.train(i, i + save_interval - 1, i - (min_iter + 1))
-            self.eval(1)
+            #self.eval(1)
 
         if self.plot_proc:
             self.plot_proc.join()
@@ -273,8 +273,8 @@ class Trainer():
             truths = inputs[3:]
 
             height, width, _ = tf.unstack(tf.squeeze(input_shape), num=3, axis=0)
-            im1 = resize_input(im1, height, width, 384, 1280)
-            im2 = resize_input(im2, height, width, 384, 1280)
+            im1 = resize_input(im1, height, width, 512, 512)
+            im2 = resize_input(im2, height, width, 512, 512)
 
             _, flow, flow_bw = unsupervised_loss(
                 (im1, im2),

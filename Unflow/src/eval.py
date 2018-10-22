@@ -33,21 +33,27 @@ tf.app.flags.DEFINE_string('ex', '',
                            'Experiment name(s) (can be comma separated list).')
 tf.app.flags.DEFINE_string('eval_txt', '08',
                            'Number of evaluate dataset')
-tf.app.flags.DEFINE_integer('num', 100,
+tf.app.flags.DEFINE_string('mode', 'estimated',
+                           'Choose between real or estimated self movement')
+
+tf.app.flags.DEFINE_integer('num', -1,
                             'Number of examples to evaluate. Set to -1 to evaluate all.')
 tf.app.flags.DEFINE_integer('num_vis', -1,
                             'Number of evalutations to visualize. Set to -1 to visualize all.')
 tf.app.flags.DEFINE_string('gpu', '0',
                            'GPU device to evaluate on.')
+
 tf.app.flags.DEFINE_boolean('output_benchmark', False,
                             'Output raw flow files.')
-tf.app.flags.DEFINE_boolean('output_visual', False,
+tf.app.flags.DEFINE_boolean('output_visual', True,
                             'Output flow visualization files.')
 tf.app.flags.DEFINE_boolean('output_backward', False,
                             'Output backward flow files.')
 tf.app.flags.DEFINE_boolean('output_png', False, # TODO finish .flo output
                             'Raw output format to use with output_benchmark.'
                             'Outputs .png flow files if true, output .flo otherwise.')
+
+
 FLAGS = tf.app.flags.FLAGS
 
 
@@ -178,7 +184,7 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input):
         image_lists = []
         sess_config = tf.ConfigProto(allow_soft_placement=True)
 
-        exp_out_dir = os.path.join('../out', name)
+        exp_out_dir = os.path.join('../out', 'flow')
         if FLAGS.output_visual or FLAGS.output_benchmark:
             if os.path.isdir(exp_out_dir):
                 shutil.rmtree(exp_out_dir)
@@ -192,8 +198,8 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input):
 
             R = 0.0
             t = matrix_input.return_matrix(2)[:,3]
-            file = open("/home/zhang/odo_.txt", "w")
-            file_err = open("/home/zhang/odo_err_.txt", "w")
+            file = open("/home/zhang/odo.txt", "w")
+            file_err = open("/home/zhang/odo_err.txt", "w")
 
             restore_networks(sess, params, ckpt, ckpt_path)
 
@@ -235,7 +241,7 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input):
                         sys.stdout.write('\r')
 
                     start = timeit.default_timer()
-                    R,t = evaluate(file, file_err, R, t,  matrix_input, num_iters, image_results[3], image_results[4], image_results[5], image_results[6])
+                    R,t = evaluate(file, file_err, R, t,  matrix_input, num_iters, image_results[3:7], FLAGS.mode)
                     stop = timeit.default_timer()
                     print('Time: ', stop - start)
 

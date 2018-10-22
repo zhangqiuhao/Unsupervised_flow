@@ -27,7 +27,7 @@ def main(args):
 
     ########
     start = 0
-    end = 4000
+    end = 154
     ########
 
     points_oxt = points_oxt[start:end]

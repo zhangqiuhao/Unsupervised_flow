@@ -23,10 +23,10 @@ def _read_flow(filenames, num_epochs=None):
 
 
 class KITTIInput(Input):
-    def __init__(self, data, batch_size, dims, *,
+    def __init__(self, data, batch_size, dims, layers, *,
                  num_threads=1, normalize=True,
                  skipped_frames=False):
-        super().__init__(data, batch_size, dims, num_threads=num_threads,
+        super().__init__(data, batch_size, dims, layers, num_threads=num_threads,
                          normalize=normalize, skipped_frames=skipped_frames)
 
     def _preprocess_flow(self, gt):
@@ -120,8 +120,8 @@ class KITTIInput(Input):
         fns_im2 = list(fns_im2)
         fns_gt = list(fns_gt)
 
-        im1 = read_png_image(fns_im1)
-        im2 = read_png_image(fns_im2)
+        im1 = read_png_image(fns_im1, layers=None)
+        im2 = read_png_image(fns_im2, layers=None)
         flow_gt, mask_gt = _read_flow(fns_gt)
 
         gt_queue = tf.train.string_input_producer(fns_gt,
@@ -145,19 +145,9 @@ class KITTIInput(Input):
             batch_size=self.batch_size,
             num_threads=self.num_threads)
 
-    def input_train_2015(self, hold_out_inv=None):
-        return self._input_train('data_scene_flow/training/image_2',
-                                 'data_scene_flow/training',
-                                 hold_out_inv)
-
-    def input_test_2015(self, hold_out_inv=None):
-        return self._input_test('data_scene_flow/testing/image_2', hold_out_inv)
-
-    def input_train_2012(self, hold_out_inv=None):
-        print("start inputing train 2012")
+    def input_train_gridmap(self, hold_out_inv=None):
+        print("start inputing train gridmap")
         return self._input_train('evaluate',
                                  'data_stereo_flow/training',
                                  hold_out_inv)
 
-    def input_test_2012(self, hold_out_inv=None):
-        return self._input_test('data_stereo_flow/testing/colored_0', hold_out_inv)

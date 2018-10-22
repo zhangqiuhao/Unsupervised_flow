@@ -1,12 +1,19 @@
 import numpy as np
+import os
 from PIL import Image
+import os
 import math
 from matplotlib.colors import hsv_to_rgb
 
 from Matrix import Matrix
 
 
-def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, img_gray, img_array, flow_u_array, flow_v_array):
+def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, image_results , mode):
+    img_gray = image_results[0]
+    img_array = image_results[1]
+    flow_u_array = image_results[2]
+    flow_v_array = image_results[3]
+
     height = img_gray.shape[1]
     width = img_gray.shape[2]
 
@@ -27,7 +34,12 @@ def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, img_gray, im
     matrix_im1 = []
     matrix_im2 = []
 
-    for idx, val in enumerate(mask_array_non_zero):
+    boundry_pixels = 30
+    mask_out_boundry = np.zeros((height, width), dtype = bool)
+    mask_out_boundry[boundry_pixels:height - boundry_pixels, boundry_pixels:width-boundry_pixels] = True
+    mask_out_boundry = mask_out_boundry.flatten()
+
+    for idx, val in enumerate(np.logical_and(mask_array_non_zero,mask_out_boundry)):
         if val:
             matrix_im1.append([matrix_flow_v[idx], matrix_flow_u[idx], 0])
             matrix_im2.append([img_v[idx], img_u[idx], 0])
@@ -56,7 +68,7 @@ def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, img_gray, im
     t_x = -(t[0] * np.cos(old_R) - t[1] * np.sin(old_R))
     t_y = t[0] * np.sin(old_R) + t[1] * np.cos(old_R)
 
-    R_now = - _rotationMatrixToEulerAngles(R)[2] / 0.8
+    R_now = - _rotationMatrixToEulerAngles(R)[2]
 
     #print("delta R ", delta_R_is, " delta t_x ", delta_t_x, " delta t_y ", delta_t_y)
     R_err = R_now - delta_R_is
@@ -69,19 +81,32 @@ def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, img_gray, im
     file.write("0 0 0 " + str(t_rotated[0]) + " 0 0 0 " + str(t_rotated[1]) + " 0 " + str(R_now) + " " + str(t[0]) + " " + str(t[1]) + "\n")
     file_err.write(str(R_err) + " " + str(t_x_err) +  " " + str(t_y_err) + "\n")
 
-    #Save flow without self movement
     output_flow = np.zeros([height, width, 2])
-    t_1 = t[1] * 10.0
-    t_0 = t[0] * 10.0
-    flow_u_without = (flow_u_array + t_1 + img_u * np.cos(R_now) + img_v * np.sin(R_now) - img_u) * mask_array_non_zero
-    flow_v_without = (flow_v_array + t_0 + img_u * np.sin(R_now) - img_v * np.cos(R_now) + img_v) * mask_array_non_zero
+    #Save flow without estimated self movement
+    if mode == "estimated":
+        t_1 = t[1] * 10.0
+        t_0 = t[0] * 10.0
+        flow_u_without = (flow_u_array + t_1 + img_u * np.cos(R_now) + img_v * np.sin(R_now) - img_u) * mask_array_non_zero
+        flow_v_without = (flow_v_array + t_0 + img_u * np.sin(R_now) - img_v * np.cos(R_now) + img_v) * mask_array_non_zero
+    elif mode == 'real':
+    #Save flow without real self movement
+        t_0 = (-(delta_t_x.item(0) * np.cos(old_R) - delta_t_y.item(0) * np.sin(old_R))) * 10.0
+        t_1 = (delta_t_x.item(0) * np.sin(old_R) + delta_t_y.item(0) * np.cos(old_R)) * 10.0
+        flow_u_without = (flow_u_array + t_1 + img_u * np.cos(delta_R_is) + img_v * np.sin(delta_R_is) - img_u) * mask_array_non_zero
+        flow_v_without = (flow_v_array + t_0 + img_u * np.sin(delta_R_is) - img_v * np.cos(delta_R_is) + img_v) * mask_array_non_zero
+    else:
+        print('Should choose between real and estimated')
 
     output_flow[:,:,0] = flow_u_without.reshape((height, width))
     output_flow[:,:,1] = flow_v_without.reshape((height, width))
 
     img_flow_rgb = (_convert_flow_to_rgb(output_flow) * 255.0).astype(np.uint8)
     img_flow_rgb = Image.fromarray(img_flow_rgb)
-    img_flow_rgb.save('/home/zhang/test/' + str(num_iters) + '_output_flow.jpeg')
+
+    directory = '/home/zhang/flow_without_' + mode + '_motion/'
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    img_flow_rgb.save(directory + str(num_iters) + '_output_flow.jpeg')
 
     return R, t_rotated
 
