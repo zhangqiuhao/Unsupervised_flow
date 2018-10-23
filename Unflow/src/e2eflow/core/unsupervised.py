@@ -31,6 +31,8 @@ def unsupervised_loss(batch, params, normalization=None, augment=True,
     im1 = im1 / 255.0
     im2 = im2 / 255.0
     im_shape = tf.shape(im1)[1:3]
+    layers = params.get('layers').split(', ')
+    num_layer = len(layers)
 
     # -------------------------------------------------------------------------
     # Data & mask augmentation
@@ -51,7 +53,7 @@ def unsupervised_loss(batch, params, normalization=None, augment=True,
         border_mask = border_mask_local * border_mask_global
 
         im1_photo, im2_photo = random_photometric(
-            [im1_geo, im2_geo],
+            [im1_geo, im2_geo], num_layer,
             noise_stddev=0.04, min_contrast=-0.3, max_contrast=0.3,
             brightness_stddev=0.02, min_colour=0.9, max_colour=1.1,
             min_gamma=0.7, max_gamma=1.5)
@@ -126,7 +128,7 @@ def unsupervised_loss(batch, params, normalization=None, augment=True,
             assert mask_occlusion in ['fb', 'disocc', '']
 
             losses = compute_losses(im1_s, im2_s,
-                                    flow_fw_s * flow_scale, flow_bw_s * flow_scale,
+                                    flow_fw_s * flow_scale, flow_bw_s * flow_scale, num_layer,
                                     border_mask=mask_s if params.get('border_mask') else None,
                                     mask_occlusion=mask_occlusion,
                                     data_max_distance=layer_patch_distances[i])

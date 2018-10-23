@@ -14,14 +14,14 @@ class KITTIData(Data):
     def get_raw_dirs(self):
         top_dir = os.path.join(self.current_dir, 'grid_map')
         dirs = []
-        #image_00_folder = os.path.join(top_dir, '00') #added
+        image_00_folder = os.path.join(top_dir, '00') #added
         image_01_folder = os.path.join(top_dir, '01') #added
-        #image_02_folder = os.path.join(top_dir, '02') #added
-        #image_03_folder = os.path.join(top_dir, '03') #added
-        #image_04_folder = os.path.join(top_dir, '04') #added
-        #image_05_folder = os.path.join(top_dir, '05') #added
-        #image_06_folder = os.path.join(top_dir, '06') #added
-        #image_07_folder = os.path.join(top_dir, '07') #added
-        dirs.extend([image_01_folder])
-        #dirs.extend([image_00_folder, image_01_folder, image_02_folder,image_03_folder,image_04_folder,image_05_folder,image_06_folder,image_07_folder])
+        image_02_folder = os.path.join(top_dir, '02') #added
+        image_03_folder = os.path.join(top_dir, '03') #added
+        image_04_folder = os.path.join(top_dir, '04') #added
+        image_05_folder = os.path.join(top_dir, '05') #added
+        image_06_folder = os.path.join(top_dir, '06') #added
+        image_07_folder = os.path.join(top_dir, '07') #added
+        #dirs.extend([image_01_folder])
+        dirs.extend([image_00_folder, image_01_folder, image_02_folder,image_03_folder,image_04_folder,image_05_folder,image_06_folder,image_07_folder])
         return dirs

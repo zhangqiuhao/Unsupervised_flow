@@ -1,5 +1,6 @@
 import os
 import random
+import png
 
 import numpy as np
 import tensorflow as tf
@@ -7,9 +8,9 @@ import tensorflow as tf
 from .augment import random_crop
 
 
-def resize_input(t, height, width, resized_h, resized_w):
+def resize_input(t, height, width, layers, resized_h, resized_w):
     # Undo old resizing and apply bilinear
-    t = tf.reshape(t, [resized_h, resized_w, 3])
+    t = tf.reshape(t, [resized_h, resized_w, layers])
     t = tf.expand_dims(tf.image.resize_image_with_crop_or_pad(t, height, width), 0)
     return tf.image.resize_bilinear(t, [resized_h, resized_w])
 
@@ -42,15 +43,16 @@ def frame_name_to_num(name):
 
 
 class Input():
-    mean = [104.920005, 110.1753, 114.785955]
     stddev = 1 / 0.0039216
+    mean = []
 
-    def __init__(self, data, batch_size, dims, *,
+    def __init__(self, data, batch_size, dims, layers, *,
                  num_threads=1, normalize=True,
                  skipped_frames=False):
         assert len(dims) == 2
         self.data = data
         self.dims = dims
+        self.layers = layers
         self.batch_size = batch_size
         self.num_threads = num_threads
         self.normalize = normalize
@@ -63,7 +65,7 @@ class Input():
 
     def _resize_image_fixed(self, image):
         height, width = self.dims
-        return tf.reshape(self._resize_crop_or_pad(image), [height, width, 3])
+        return tf.reshape(self._resize_crop_or_pad(image), [height, width, len(self.layers)])
 
     def _normalize_image(self, image):
         return (image - self.mean) / self.stddev
@@ -74,23 +76,21 @@ class Input():
             image = self._normalize_image(image)
         return image
 
-    def _input_images(self, image_dir, hold_out_inv=None):
+    def _input_images(self, current_dir, hold_out_inv=None):
         """Assumes that paired images are next to each other after ordering the
         files.
         """
-        image_dir = os.path.join(self.data.current_dir, image_dir)
+        calib_dir = os.path.join(current_dir, 'calib')
+        image_dir = os.path.join(current_dir, 'gridmap')
 
         filenames_1 = []
         filenames_2 = []
-        image_files = os.listdir(image_dir)
-        image_files.sort()
+        calib_files = os.listdir(calib_dir)
+        calib_files.sort()
 
-        self.number_image_files = len(image_files)
-        print("Number of images: {}".format(len(image_files)))
-
-        for i in range(len(image_files) - 1):
-            filenames_1.append(os.path.join(image_dir, image_files[i]))
-            filenames_2.append(os.path.join(image_dir, image_files[i + 1]))
+        for i in range(len(calib_files) - 1):
+            filenames_1.append(os.path.join(image_dir, calib_files[i].split('.')[0]))
+            filenames_2.append(os.path.join(image_dir, calib_files[i + 1].split('.')[0]))
 
         if hold_out_inv is not None:
             filenames = list(zip(filenames_1, filenames_2))
@@ -102,21 +102,36 @@ class Input():
             filenames_1 = list(filenames_1)
             filenames_2 = list(filenames_2)
 
-        input_1 = read_png_image(filenames_1, 1)
-        input_2 = read_png_image(filenames_2, 1)
+        input_1 = read_png_image(filenames_1, self.layers, self.dims, 1)
+        input_2 = read_png_image(filenames_2, self.layers, self.dims, 1)
+        input_1 = tf.concat([x for x in input_1], axis=-1)
+        input_2 = tf.concat([x for x in input_2], axis=-1)
+
+        print(input_1.shape)
+
         image_1 = self._preprocess_image(input_1)
         image_2 = self._preprocess_image(input_2)
+
         return tf.shape(input_1), image_1, image_2
 
     def get_normalization(self):
+        #[104.920005, 110.1753, 114.785955]
+        self.mean = [127.5] * len(self.layers)
         return self.mean, self.stddev
 
-def read_png_image(filenames, num_epochs=None):
+
+def read_png_image(filenames, layers, dims, num_epochs=None):
     """Given a list of filenames, constructs a reader op for images."""
-    filename_queue = tf.train.string_input_producer(filenames,
-        shuffle=False, capacity=len(filenames))
+    image = []
     reader = tf.WholeFileReader()
-    _, value = reader.read(filename_queue)
-    image_uint8 = tf.image.decode_png(value, channels=3)
-    image = tf.cast(image_uint8, tf.float32)
+    if layers is not None:
+        for i, layer in enumerate(layers):
+            layer = '_' + layer + '.png'
+            filenames_with_layer = [i+layer for i in filenames]
+            filename_queue = tf.train.string_input_producer(filenames_with_layer,
+                                                            shuffle=False, capacity=len(filenames_with_layer))
+            _, value = reader.read(filename_queue)
+            image_uint8 = tf.image.decode_png(value, channels=1)
+            image_float32 = tf.cast(image_uint8, tf.float32)
+            image.append(image_float32)
     return image

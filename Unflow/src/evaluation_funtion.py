@@ -8,7 +8,7 @@ from matplotlib.colors import hsv_to_rgb
 from Matrix import Matrix
 
 
-def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, image_results , mode):
+def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, image_results, mode):
     img_gray = image_results[0]
     img_array = image_results[1]
     flow_u_array = image_results[2]
@@ -35,11 +35,11 @@ def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, image_result
     matrix_im2 = []
 
     boundry_pixels = 30
-    mask_out_boundry = np.zeros((height, width), dtype = bool)
+    mask_out_boundry = np.zeros((height, width), dtype=bool)
     mask_out_boundry[boundry_pixels:height - boundry_pixels, boundry_pixels:width-boundry_pixels] = True
     mask_out_boundry = mask_out_boundry.flatten()
 
-    for idx, val in enumerate(np.logical_and(mask_array_non_zero,mask_out_boundry)):
+    for idx, val in enumerate(np.logical_and(mask_array_non_zero, mask_out_boundry)):
         if val:
             matrix_im1.append([matrix_flow_v[idx], matrix_flow_u[idx], 0])
             matrix_im2.append([img_v[idx], img_u[idx], 0])

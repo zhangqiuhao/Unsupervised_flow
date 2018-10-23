@@ -5,6 +5,10 @@ from tensorflow.contrib.distributions import Normal
 from ..ops import backward_warp, forward_warp
 from .image_warp import image_warp
 
+from tensorflow.python.framework import ops
+from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import math_ops
+from tensorflow.python.framework import dtypes
 
 DISOCC_THRESH = 0.8
 
@@ -13,7 +17,7 @@ def length_sq(x):
     return tf.reduce_sum(tf.square(x), 3, keepdims=True)
 
 
-def compute_losses(im1, im2, flow_fw, flow_bw,
+def compute_losses(im1, im2, flow_fw, flow_bw, num_layer,
                    border_mask=None,
                    mask_occlusion='',
                    data_max_distance=1):
@@ -24,8 +28,6 @@ def compute_losses(im1, im2, flow_fw, flow_bw,
 
     im_diff_fw = im1 - im2_warped
     im_diff_bw = im2 - im1_warped
-
-
 
     disocc_fw = tf.cast(forward_warp(flow_fw) < DISOCC_THRESH, tf.float32)
     disocc_bw = tf.cast(forward_warp(flow_bw) < DISOCC_THRESH, tf.float32)
@@ -65,8 +67,8 @@ def compute_losses(im1, im2, flow_fw, flow_bw,
     losses['photo'] =  (photometric_loss(im_diff_fw, mask_fw) +
                         photometric_loss(im_diff_bw, mask_bw))
 
-    losses['grad'] = (gradient_loss(im1, im2_warped, mask_fw) +
-                      gradient_loss(im2, im1_warped, mask_bw))
+    losses['grad'] = (gradient_loss(im1, im2_warped, mask_fw, num_layer) +
+                      gradient_loss(im2, im1_warped, mask_bw, num_layer))
 
     losses['smooth_1st'] = (smoothness_loss(flow_fw) +
                             smoothness_loss(flow_bw))
@@ -77,28 +79,36 @@ def compute_losses(im1, im2, flow_fw, flow_bw,
     losses['fb'] = (charbonnier_loss(flow_diff_fw, mask_fw) +
                     charbonnier_loss(flow_diff_bw, mask_bw))
 
-    losses['ternary'] = (ternary_loss(im1, im2_warped, mask_fw,
+    losses['ternary'] = (ternary_loss(im1, im2_warped, mask_fw, num_layer,
                                       max_distance=data_max_distance) +
-                         ternary_loss(im2, im1_warped, mask_bw,
+                         ternary_loss(im2, im1_warped, mask_bw, num_layer,
                                       max_distance=data_max_distance))
 
     return losses
 
 
-def ternary_loss(im1, im2_warped, mask, max_distance=1):
+def multi_channels_to_grayscale(images, num_layer, name=None):
+    with ops.name_scope(name, 'rgb_to_grayscale', [images]) as name:
+        images = ops.convert_to_tensor(images, name='images')
+        # Remember original dtype to so we can convert back if needed
+        orig_dtype = images.dtype
+        flt_image = tf.image.convert_image_dtype(images, dtypes.float32)
+
+        rgb_weights = [1 / float(num_layer)] * num_layer
+        gray_float = math_ops.tensordot(flt_image, rgb_weights, [-1, -1])
+        gray_float = array_ops.expand_dims(gray_float, -1)
+        return tf.image.convert_image_dtype(gray_float, orig_dtype, name=name)
+
+
+def ternary_loss(im1, im2_warped, mask, num_layer, max_distance=1):
     patch_size = 2 * max_distance + 1
     with tf.variable_scope('ternary_loss'):
         def _ternary_transform(image):
-            intensities = tf.image.rgb_to_grayscale(image) * 255
-            #patches = tf.extract_image_patches( # fix rows_in is None
-            #    intensities,
-            #    ksizes=[1, patch_size, patch_size, 1],
-            #    strides=[1, 1, 1, 1],
-            #    rates=[1, 1, 1, 1],
-            #    padding='SAME')
+            intensities = multi_channels_to_grayscale(image, num_layer) * 255
+
             out_channels = patch_size * patch_size
             w = np.eye(out_channels).reshape((patch_size, patch_size, 1, out_channels))
-            weights =  tf.constant(w, dtype=tf.float32)
+            weights = tf.constant(w, dtype=tf.float32)
             patches = tf.nn.conv2d(intensities, weights, strides=[1, 1, 1, 1], padding='SAME')
 
             transf = patches - intensities
@@ -130,17 +140,6 @@ def occlusion(flow_fw, flow_bw):
     occ_fw = tf.cast(length_sq(flow_diff_fw) > occ_thresh, tf.float32)
     occ_bw = tf.cast(length_sq(flow_diff_bw) > occ_thresh, tf.float32)
     return occ_fw, occ_bw
-
-
-#def disocclusion(div):
-#    """Creates binary disocclusion map based on flow divergence."""
-#    return tf.round(norm(tf.maximum(0.0, div), 0.3))
-
-
-#def occlusion(im_diff, div):
-#    """Creates occlusion map based on warping error & flow divergence."""
-#    gray_diff = tf.image.rgb_to_grayscale(im_diff)
-#    return 1 - norm(gray_diff, 20.0 / 255) * norm(tf.minimum(0.0, div), 0.3)
 
 
 def divergence(flow):
@@ -187,7 +186,7 @@ def diffusion_loss(flow, im, occ):
     occ_diff = neighbor_diff(occ)
     flow_diff_u, flow_diff_v = tf.split(axis=3, num_or_size_splits=2, value=neighbor_diff(flow, 2))
     flow_diff = tf.sqrt(tf.square(flow_diff_u) + tf.square(flow_diff_v))
-    intensity_diff = tf.abs(neighbor_diff(tf.image.rgb_to_grayscale(im)))
+    intensity_diff = tf.abs(neighbor_diff(multi_channels_to_grayscale(im)))
 
     diff = norm(intensity_diff, 7.5 / 255) * norm(flow_diff, 0.5) * occ_diff * flow_diff
     return charbonnier_loss(diff)
@@ -220,12 +219,12 @@ def _smoothness_deltas(flow):
         return delta_u, delta_v, mask
 
 
-def _gradient_delta(im1, im2_warped):
+def _gradient_delta(im1, im2_warped, num_layer):
     with tf.variable_scope('gradient_delta'):
         filter_x = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]] # sobel filter
         filter_y = np.transpose(filter_x)
-        weight_array = np.zeros([3, 3, 3, 6])
-        for c in range(3):
+        weight_array = np.zeros([3, 3, num_layer, num_layer * 2]) ###
+        for c in range(num_layer):###
             weight_array[:, :, c, 2 * c] = filter_x
             weight_array[:, :, c, 2 * c + 1] = filter_y
         weights = tf.constant(weight_array, dtype=tf.float32)
@@ -236,12 +235,12 @@ def _gradient_delta(im1, im2_warped):
         return diff
 
 
-def gradient_loss(im1, im2_warped, mask):
+def gradient_loss(im1, im2_warped, mask, num_layer):
     with tf.variable_scope('gradient_loss'):
         mask_x = create_mask(im1, [[0, 0], [1, 1]])
         mask_y = create_mask(im1, [[1, 1], [0, 0]])
-        gradient_mask = tf.tile(tf.concat(axis=3, values=[mask_x, mask_y]), [1, 1, 1, 3])
-        diff = _gradient_delta(im1, im2_warped)
+        gradient_mask = tf.tile(tf.concat(axis=3, values=[mask_x, mask_y]), [1, 1, 1, num_layer]) ###
+        diff = _gradient_delta(im1, im2_warped, num_layer)
         return charbonnier_loss(diff, mask * gradient_mask)
 
 

@@ -42,8 +42,8 @@ def frame_name_to_num(name):
 
 
 class Input():
-    mean = [104.920005, 110.1753, 114.785955]
     stddev = 1 / 0.0039216
+    mean = []
 
     def __init__(self, data, batch_size, dims, layers, *,
                  num_threads=1, normalize=True,
@@ -117,6 +117,8 @@ class Input():
             allow_smaller_final_batch=True)
 
     def get_normalization(self):
+        #[104.920005, 110.1753, 114.785955]
+        self.mean = [127.5] * len(self.layers)
         return self.mean, self.stddev
 
     def input_raw(self, swap_images=True, sequence=True,
@@ -193,6 +195,8 @@ class Input():
         with tf.variable_scope('train_inputs'):
             image_1 = read_png_image(filenames_1, self.layers, self.dims)
             image_2 = read_png_image(filenames_2, self.layers, self.dims)
+            image_1 = tf.concat([x for x in image_1], axis=-1)
+            image_2 = tf.concat([x for x in image_2], axis=-1)
 
             if needs_crop:
                 #if center_crop:
@@ -219,7 +223,7 @@ class Input():
 def read_png_image(filenames, layers, dims, num_epochs=None):
     """Given a list of filenames, constructs a reader op for images."""
     height, width = dims
-    image = tf.Variable(tf.zeros([height, width, len(layers)]))
+    image = []
     reader = tf.WholeFileReader()
     if layers is not None:
         for i, layer in enumerate(layers):
@@ -230,12 +234,5 @@ def read_png_image(filenames, layers, dims, num_epochs=None):
             _, value = reader.read(filename_queue)
             image_uint8 = tf.image.decode_png(value, channels=1)
             image_float32 = tf.cast(image_uint8, tf.float32)
-            tf.assign(image[:, :, i], image_float32)
-    else:
-        filenames = [i+'.png' for i in filenames]
-        filename_queue = tf.train.string_input_producer(filenames,
-            shuffle=False, capacity=len(filenames))
-        _, value = reader.read(filename_queue)
-        image_uint8 = tf.image.decode_png(value, channels=3)
-        image = tf.cast(image_uint8, tf.float32)
+            image.append(image_float32)
     return image

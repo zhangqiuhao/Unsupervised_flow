@@ -54,7 +54,7 @@ def random_affine(tensors, *,
     return out
 
 
-def random_photometric(ims, *,
+def random_photometric(ims, channels, *,
                        noise_stddev=0.0, min_contrast=0.0, max_contrast=0.0,
                        brightness_stddev=0.0, min_colour=1.0, max_colour=1.0,
                        min_gamma=1.0, max_gamma=1.0):
@@ -65,7 +65,7 @@ def random_photometric(ims, *,
 
     Args:
         ims: list of 3-channel image batches normalized to [0, 1].
-        channel_mean: tensor of shape [3] which was used to normalize the pixel
+        channel_mean: tensor of shape [channels] which was used to normalize the pixel
             values ranging from 0 ... 255.
 
     Returns:
@@ -79,7 +79,7 @@ def random_photometric(ims, *,
         contrast = tf.random_uniform([num_batch, 1], min_contrast, max_contrast)
         gamma = tf.random_uniform([num_batch, 1], min_gamma, max_gamma)
         gamma_inv = 1.0 / gamma
-        colour = tf.random_uniform([num_batch, 3], min_colour, max_colour)
+        colour = tf.random_uniform([num_batch, channels], min_colour, max_colour)
         if noise_stddev > 0.0:
             noise = tf.random_normal([num_batch, 1], stddev=noise_stddev)
         else:

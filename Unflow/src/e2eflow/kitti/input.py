@@ -120,8 +120,8 @@ class KITTIInput(Input):
         fns_im2 = list(fns_im2)
         fns_gt = list(fns_gt)
 
-        im1 = read_png_image(fns_im1, layers=None)
-        im2 = read_png_image(fns_im2, layers=None)
+        im1 = read_png_image(fns_im1, layers=self.layers)
+        im2 = read_png_image(fns_im2, layers=self.layers)
         flow_gt, mask_gt = _read_flow(fns_gt)
 
         gt_queue = tf.train.string_input_producer(fns_gt,

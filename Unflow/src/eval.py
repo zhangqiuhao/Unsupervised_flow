@@ -15,11 +15,11 @@ from e2eflow.core.image_warp import image_warp
 from e2eflow.kitti.eval_input import KITTIInput
 from e2eflow.kitti.data import KITTIData
 from e2eflow.core.unsupervised import unsupervised_loss
-from e2eflow.core.input import resize_input, resize_output_crop, resize_output, resize_output_flow
+from e2eflow.core.eval_input import resize_input, resize_output_crop, resize_output, resize_output_flow
 from e2eflow.core.train import restore_networks
 from e2eflow.ops import forward_warp
 from e2eflow.gui import display
-from e2eflow.core.losses import DISOCC_THRESH, occlusion, create_outgoing_mask
+from e2eflow.core.losses import DISOCC_THRESH, occlusion, create_outgoing_mask, multi_channels_to_grayscale
 from e2eflow.util import convert_input_strings
 from Matrix import Matrix
 from evaluation_funtion import evaluate
@@ -43,8 +43,6 @@ tf.app.flags.DEFINE_integer('num_vis', -1,
 tf.app.flags.DEFINE_string('gpu', '0',
                            'GPU device to evaluate on.')
 
-tf.app.flags.DEFINE_boolean('output_benchmark', False,
-                            'Output raw flow files.')
 tf.app.flags.DEFINE_boolean('output_visual', True,
                             'Output flow visualization files.')
 tf.app.flags.DEFINE_boolean('output_backward', False,
@@ -96,7 +94,7 @@ def write_flo(flow, filename):
     f.close()
 
 
-def _evaluate_experiment(name, input_fn, data_input, matrix_input):
+def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
     normalize_fn = data_input._normalize_image
     resized_h = data_input.dims[0]
     resized_w = data_input.dims[1]
@@ -124,57 +122,31 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input):
         im1, im2, input_shape = inputs[:3]
 
         height, width, _ = tf.unstack(tf.squeeze(input_shape), num=3, axis=0)
-        im1 = resize_input(im1, height, width, resized_h, resized_w)
-        im2 = resize_input(im2, height, width, resized_h, resized_w) # TODO adapt train.py
+        im1 = resize_input(im1, height, width, layers, resized_h, resized_w)
+        im2 = resize_input(im2, height, width, layers, resized_h, resized_w) # TODO adapt train.py
 
         _, flow, flow_bw = unsupervised_loss(
             (im1, im2),
             normalization=data_input.get_normalization(),
             params=params, augment=False, return_flow=True)
 
-        im1 = resize_output(im1, height, width, 3)
-        im2 = resize_output(im2, height, width, 3)
+        im1 = resize_output(im1, height, width, layers)
+        im2 = resize_output(im2, height, width, layers)
         flow = resize_output_flow(flow, height, width, 2)
         flow_bw = resize_output_flow(flow_bw, height, width, 2)
 
         flow_fw_int16 = flow_to_int16(flow)
         flow_bw_int16 = flow_to_int16(flow_bw)
 
-        im1_pred = image_warp(im2, flow)
-        im1_diff = tf.abs(im1 - im1_pred)
-        #im2_diff = tf.abs(im1 - im2)
-
-        #flow_bw_warped = image_warp(flow_bw, flow)
-        #div = divergence(flow_occ)
-        #div_bw = divergence(flow_bw)
-
         # Evaluate flow with odometry data
-
-        occ_pred = 1 - (1 - occlusion(flow, flow_bw)[0])
-        def_pred = 1 - (1 - occlusion(flow, flow_bw)[1])
-        disocc_pred = forward_warp(flow_bw) < DISOCC_THRESH
-        disocc_fw_pred = forward_warp(flow) < DISOCC_THRESH
-
         flow_u, flow_v = tf.unstack(flow, axis=3)
 
-        image_slots = [((im2 * 0.5 + im1_pred * 0.5) / 255, 'overlay'),
-                       (im1_pred / 255, 'img1_pred'),
-                       #(im1_diff / 255, 'brightness error'),
-                       #(im1 / 255, 'first image', 1, 0),
-                       #(im2 / 255, 'second image', 1, 0),
-                       #(im2_diff / 255, '|first - second|', 1, 2),
+        image_slots = [#((im1), 'im1'),
                        (flow_to_color(flow), 'flow'),
-                       (tf.image.rgb_to_grayscale(im2), 'gray_img'),
-                       (tf.reshape(tf.image.rgb_to_grayscale(im2), [-1]), 'img_array'),
+                       (multi_channels_to_grayscale(im1, layers), 'gray_img'),
+                       (tf.reshape(multi_channels_to_grayscale(im2, layers), [-1]), 'img_array'),
                        (tf.reshape(flow_u, [-1]), 'flow_u_array'),
-                       (tf.reshape(flow_v, [-1]), 'flow_v_array')
-                       #(flow_to_color(flow_bw), 'flow bw prediction'),
-                       #(tf.image.rgb_to_grayscale(im1_diff) > 20, 'diff'),
-                       #(div, 'div'),
-                       #(div < -2, 'neg div'),
-                       #(div > 5, 'pos div'),
-                       #  (blue: correct, red: wrong, dark: occluded)
-        ]
+                       (tf.reshape(flow_v, [-1]), 'flow_v_array')]
 
         num_ims = len(image_slots)
         image_ops = [t[0] for t in image_slots]
@@ -214,34 +186,21 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input):
                 num_iters = 0
                 while not coord.should_stop() and (max_iter is None or num_iters != max_iter):
                     all_results = sess.run([flow, flow_bw, flow_fw_int16, flow_bw_int16] + all_ops)
-                    flow_fw_res, flow_bw_res, flow_fw_int16_res, flow_bw_int16_res = all_results[:4]
                     all_results = all_results[4:]
                     image_results = all_results[:num_ims]
                     #scalar_results = all_results[num_ims:]
                     iterstr = str(num_iters).zfill(6)
                     if FLAGS.output_visual:
                         path_flow = os.path.join(exp_out_dir, iterstr + '_flow.png')
-                        #path_overlay = os.path.join(exp_out_dir, iterstr + '_overlay.png')
-                        #path_fw_overlay = os.path.join(exp_out_dir, iterstr + '_fw.png')
-                        #write_rgb_png(image_results[0] * 255, path_overlay)
-                        #write_rgb_png(image_results[1] * 255, path_fw_overlay)
-                        write_rgb_png(image_results[2] * 255, path_flow)
-                    if FLAGS.output_benchmark:
-                        path_fw = os.path.join(exp_out_dir, iterstr)
-                        if FLAGS.output_png:
-                            write_rgb_png(flow_fw_int16_res, path_fw  + '_10.png', bitdepth=16)
-                        else:
-                            write_flo(flow_fw_res, path_fw + '_10.flo')
-                        if FLAGS.output_backward:
-                            path_fw = os.path.join(exp_out_dir, iterstr + '_01.png')
-                            write_rgb_png(flow_bw_int16_res, path_bw, bitdepth=16)
+                        im1 = image_results[0]*255
+                        write_rgb_png(im1, path_flow)
                     if num_iters < FLAGS.num_vis:
                         image_lists.append(image_results)
                     if num_iters > 0:
                         sys.stdout.write('\r')
 
                     start = timeit.default_timer()
-                    R,t = evaluate(file, file_err, R, t,  matrix_input, num_iters, image_results[3:7], FLAGS.mode)
+                    #R,t = evaluate(file, file_err, R, t,  matrix_input, num_iters, image_results[1:5], FLAGS.mode)
                     stop = timeit.default_timer()
                     print('Time: ', stop - start)
 
@@ -266,17 +225,21 @@ def main(argv=None):
     default_config = config_dict()
     dirs = default_config['dirs']
 
+    kconfig = default_config['train_kitti']
+    layers = kconfig.get('layers').split(', ')
+    print(layers)
+
     # Input odometry data
     matrix_dir = dirs['odo_dirs'] + FLAGS.eval_txt + '.txt'
-    matrix_input = Matrix(dir = matrix_dir)
+    matrix_input = Matrix(dir=matrix_dir)
 
     data = KITTIData(dirs['data'], development=True)
     data_input = KITTIInput(data, batch_size=1, normalize=False,
-                                 dims=(640,640))
+                                 dims=(640, 640), layers=layers)
     input_fn = getattr(data_input, 'input_' + FLAGS.variant)
 
     for name in FLAGS.ex.split(','):
-        _evaluate_experiment(name, input_fn, data_input, matrix_input)
+        _evaluate_experiment(name, input_fn, data_input, matrix_input, len(layers))
 
 if __name__ == '__main__':
     tf.app.run()
