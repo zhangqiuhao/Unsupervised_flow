@@ -26,31 +26,38 @@ def _track_image(op, name):
 
 def unsupervised_loss(batch, params, normalization=None, augment=True,
                       return_flow=False):
+    params.get('')
     channel_mean = tf.constant(normalization[0]) / 255.0
-    im1, im2 = batch
+    im1, im2, im1_mask, im2_mask = batch
     im1 = im1 / 255.0
     im2 = im2 / 255.0
     im_shape = tf.shape(im1)[1:3]
     layers = params.get('layers').split(', ')
-    num_layer = len(layers)
-
+    num_layer = 0
+    for layer in layers:
+        if layer == 'rgb_cartesian':
+            num_layer = num_layer + 3
+        else:
+            num_layer = num_layer + 1
     # -------------------------------------------------------------------------
     # Data & mask augmentation
     border_mask = create_border_mask(im1, 0.1)
 
     if augment:
-        im1_geo, im2_geo, border_mask_global = random_affine(
-            [im1, im2, border_mask],
+        im1_geo, im2_geo, border_mask_global, im1_mask_global, im2_mask_global = random_affine(
+            [im1, im2, border_mask, im1_mask, im2_mask],
             horizontal_flipping=True,
             min_scale=0.9, max_scale=1.1
             )
 
         # augment locally
-        im2_geo, border_mask_local = random_affine(
-            [im2_geo, border_mask],
+        im2_geo, border_mask_local, im1_mask_local, im2_mask_local = random_affine(
+            [im2_geo, border_mask, im1_mask, im2_mask],
             min_scale=0.9, max_scale=1.1
             )
         border_mask = border_mask_local * border_mask_global
+        im1_mask = im1_mask_global * im1_mask_local
+        im2_mask = im2_mask_global * im2_mask_local
 
         im1_photo, im2_photo = random_photometric(
             [im1_geo, im2_geo], num_layer,
@@ -101,6 +108,10 @@ def unsupervised_loss(batch, params, normalization=None, augment=True,
         im1_s = downsample(im1_norm, 4)
         im2_s = downsample(im2_norm, 4)
         mask_s = downsample(border_mask, 4)
+        #im1_mask = downsample(im1_mask, 4)
+        #im2_mask = downsample(im2_mask, 4)
+        #im1_s = im1_s * im1_mask
+        #im2_s = im2_s * im2_mask
         final_flow_scale = FLOW_SCALE
         final_flow_fw = tf.image.resize_bilinear(flows_fw[0], im_shape) * final_flow_scale * 4
         final_flow_bw = tf.image.resize_bilinear(flows_bw[0], im_shape) * final_flow_scale * 4

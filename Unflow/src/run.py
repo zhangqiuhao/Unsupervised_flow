@@ -49,16 +49,22 @@ def main(argv=None):
     convert_input_strings(kconfig, dirs)
     kiters = kconfig.get('num_iters', 0)
     layers = kconfig.get('layers').split(', ')
+    mask_layers = kconfig.get('mask_layers')
+    if mask_layers is not None:
+        mask_layers = kconfig.get('mask_layers').split(', ')
+    num_layers = 0
+    for layer in layers:
+        if layer == 'rgb_cartesian':
+            num_layers = num_layers + 3
+        else:
+            num_layers = num_layers + 1
+    print(layers, num_layers)
+    print(mask_layers)
 
     kdata = KITTIData(data_dir=dirs['data'],
                       fast_dir=dirs.get('fast'),
                       stat_log_dir=None,
                       development=run_config['development'])
-    einput = KITTIInput(data=kdata,
-                        batch_size=1,
-                        normalize=False,
-                        dims=(512, 512),
-                        layers=layers)
 
     if train_dataset == 'kitti':
         kinput = KITTIInput(data=kdata,
@@ -66,16 +72,16 @@ def main(argv=None):
                             normalize=False,
                             skipped_frames=True,
                             dims=(kconfig['height'], kconfig['width']),
-                            layers=layers)
+                            layers=layers,
+                            num_layers=num_layers,
+                            mask_layers=mask_layers)
         tr = Trainer(
               lambda shift: kinput.input_raw(swap_images=False,
                                              center_crop=True,
                                              shift=shift * run_config['batch_size']),
-              lambda: einput.input_train_gridmap(),
               params=kconfig,
               normalization=kinput.get_normalization(),
               train_summaries_dir=experiment.train_dir,
-              eval_summaries_dir=experiment.eval_dir,
               experiment=FLAGS.ex,
               ckpt_dir=experiment.save_dir,
               debug=FLAGS.debug,

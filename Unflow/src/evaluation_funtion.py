@@ -4,6 +4,7 @@ from PIL import Image
 import os
 import math
 from matplotlib.colors import hsv_to_rgb
+import statistics
 
 from Matrix import Matrix
 
@@ -18,15 +19,16 @@ def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, image_result
     width = img_gray.shape[2]
 
     #create uv image and mask
-    mask_array_non_zero = np.logical_and(np.logical_and(abs(flow_u_array) > 0.001, abs(flow_v_array) > 0.001), img_array>0.001)
-    img_u = np.zeros((height, width))
-    img_v = np.zeros((height, width))
-    for v in range(height):
-        img_v[v,:] =+ height - v
-    for u in range(width):
-        img_u[:,u] =+ u - width / 2.0
-    img_v = img_v.flatten()
-    img_u = img_u.flatten()
+    mask_array_non_zero = np.logical_and(np.logical_and(abs(flow_u_array) > 0.001, abs(flow_v_array) > 0.001),
+                                         img_array > 0.001)
+
+    boundry_pixels = 50
+    mask_out_boundry = np.zeros((height, width), dtype=bool)
+    mask_out_boundry[boundry_pixels:height - boundry_pixels, boundry_pixels:width-boundry_pixels] = True
+    mask_out_boundry = mask_out_boundry.flatten()
+    mask = np.logical_and(mask_array_non_zero, mask_out_boundry)
+
+    img_v, img_u = _calculate_rotation_midpoint(height, width, flow_v_array, flow_u_array, mask)
 
     matrix_flow_v = img_v + flow_v_array
     matrix_flow_u = img_u - flow_u_array
@@ -34,12 +36,7 @@ def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, image_result
     matrix_im1 = []
     matrix_im2 = []
 
-    boundry_pixels = 30
-    mask_out_boundry = np.zeros((height, width), dtype=bool)
-    mask_out_boundry[boundry_pixels:height - boundry_pixels, boundry_pixels:width-boundry_pixels] = True
-    mask_out_boundry = mask_out_boundry.flatten()
-
-    for idx, val in enumerate(np.logical_and(mask_array_non_zero, mask_out_boundry)):
+    for idx, val in enumerate(mask):
         if val:
             matrix_im1.append([matrix_flow_v[idx], matrix_flow_u[idx], 0])
             matrix_im2.append([img_v[idx], img_u[idx], 0])
@@ -70,11 +67,9 @@ def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, image_result
 
     R_now = - _rotationMatrixToEulerAngles(R)[2]
 
-    #print("delta R ", delta_R_is, " delta t_x ", delta_t_x, " delta t_y ", delta_t_y)
     R_err = R_now - delta_R_is
     t_x_err = t_x - delta_t_x.item(0)
     t_y_err = t_y - delta_t_y.item(0)
-    #print("R_err: ", R_err, " t_x_err: ", t_x_err, " t_y_err: ", t_y_err, " c: ", c)
 
     R = old_R + R_now
     t_rotated = [(t_x+old_t[0]).item(0) , (t_y+old_t[1]).item(0)]
@@ -198,3 +193,45 @@ def _rotationMatrixToEulerAngles(R):
         z = 0
 
     return np.array([x, y, z])
+
+
+def _calculate_rotation_midpoint(height, width, flow_v_array, flow_u_array, mask):
+    flow_none_zeros = []
+    for idx, val in enumerate(mask):
+        if val:
+            flow_none_zeros.append([flow_v_array[idx], flow_u_array[idx]])
+
+    flow_none_zeros = np.asarray(flow_none_zeros)
+    length = flow_none_zeros.shape[0]
+    if length%2 != 0:
+        length = length - 1
+    flow_left = flow_none_zeros[0:int(length/2), :]
+    flow_left = np.divide(flow_left, np.reshape(np.linalg.norm(flow_left, axis=-1), (int(length/2), 1)))
+    flow_right = flow_none_zeros[int(length/2):length, :]
+    flow_right = np.divide(flow_right, np.reshape(np.linalg.norm(flow_right, axis=-1), (int(length/2), 1)))
+
+    check_parallel = (np.abs(np.cross(flow_left, flow_right)) > 0.1).sum() / int(length/2)
+
+    img_u = np.zeros((height, width))
+    img_v = np.zeros((height, width))
+    for v in range(height):
+        img_v[v, :] = v
+    for u in range(width):
+        img_u[:, u] = u
+    if check_parallel > 1.0:
+        print("Percentage:" + str(check_parallel) + " Estimating rotation midpoint")
+        img_v_flat = img_v.flatten()
+        img_u_flat = img_u.flatten()
+        Y = []
+        for idx, val in enumerate(mask):
+            if val:
+                Y.append(flow_v_array[idx] * img_v_flat[idx] + flow_u_array[idx] * img_u_flat[idx])
+        flow_none_zeros_T = np.transpose(flow_none_zeros)
+        center = np.dot(np.dot(np.linalg.inv(np.dot(flow_none_zeros_T, flow_none_zeros)), flow_none_zeros_T), Y)
+        print(center)
+        img_v = center[0] - img_v
+        img_u = img_u - center[1]
+    else:
+        img_v = height - img_v
+        img_u = img_u - width / 2.0
+    return img_v.flatten(), img_u.flatten()

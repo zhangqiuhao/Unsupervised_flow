@@ -64,8 +64,8 @@ def compute_losses(im1, im2, flow_fw, flow_bw, num_layer,
     losses['occ'] = (charbonnier_loss(occ_fw) +
                      charbonnier_loss(occ_bw))
 
-    losses['photo'] =  (photometric_loss(im_diff_fw, mask_fw) +
-                        photometric_loss(im_diff_bw, mask_bw))
+    losses['photo'] = (photometric_loss(im_diff_fw, mask_fw) +
+                       photometric_loss(im_diff_bw, mask_bw))
 
     losses['grad'] = (gradient_loss(im1, im2_warped, mask_fw, num_layer) +
                       gradient_loss(im2, im1_warped, mask_bw, num_layer))
@@ -136,7 +136,7 @@ def occlusion(flow_fw, flow_bw):
     flow_fw_warped = image_warp(flow_fw, flow_bw)
     flow_diff_fw = flow_fw + flow_bw_warped
     flow_diff_bw = flow_bw + flow_fw_warped
-    occ_thresh =  0.01 * mag_sq + 0.5
+    occ_thresh = 0.01 * mag_sq + 0.5
     occ_fw = tf.cast(length_sq(flow_diff_fw) > occ_thresh, tf.float32)
     occ_bw = tf.cast(length_sq(flow_diff_bw) > occ_thresh, tf.float32)
     return occ_fw, occ_bw

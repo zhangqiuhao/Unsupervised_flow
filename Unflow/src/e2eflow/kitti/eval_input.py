@@ -8,16 +8,16 @@ import random
 from ..core.eval_input import read_png_image, Input
 
 class KITTIInput(Input):
-    def __init__(self, data, batch_size, dims, layers, *,
+    def __init__(self, data, batch_size, dims, layers, num_layers, mask_layers, *,
                  num_threads=1, normalize=True,
                  skipped_frames=False):
-        super().__init__(data, batch_size, dims, layers, num_threads=num_threads,
+        super().__init__(data, batch_size, dims, layers, num_layers, mask_layers, num_threads=num_threads,
                          normalize=normalize, skipped_frames=skipped_frames)
 
     def _input_train(self, image_dir, hold_out_inv=None):
-        input_shape, im1, im2 = self._input_images(image_dir, hold_out_inv)
+        input_shape, im1, im2, mask_image_1, mask_image_2 = self._input_images(image_dir, hold_out_inv)
         return tf.train.batch(
-            [im1, im2, input_shape],
+            [im1, im2, mask_image_1, mask_image_2, input_shape],
             batch_size=self.batch_size,
             num_threads=self.num_threads,
             allow_smaller_final_batch=True)

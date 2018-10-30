@@ -36,7 +36,7 @@ tf.app.flags.DEFINE_string('eval_txt', '08',
 tf.app.flags.DEFINE_string('mode', 'estimated',
                            'Choose between real or estimated self movement')
 
-tf.app.flags.DEFINE_integer('num', -1,
+tf.app.flags.DEFINE_integer('num', 4000,
                             'Number of examples to evaluate. Set to -1 to evaluate all.')
 tf.app.flags.DEFINE_integer('num_vis', -1,
                             'Number of evalutations to visualize. Set to -1 to visualize all.')
@@ -119,14 +119,14 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
 
     with tf.Graph().as_default(): #, tf.device('gpu:' + FLAGS.gpu):
         inputs = input_fn()
-        im1, im2, input_shape = inputs[:3]
+        im1, im2, mask_image_1, mask_image_2, input_shape = inputs[:5]
 
         height, width, _ = tf.unstack(tf.squeeze(input_shape), num=3, axis=0)
         im1 = resize_input(im1, height, width, layers, resized_h, resized_w)
         im2 = resize_input(im2, height, width, layers, resized_h, resized_w) # TODO adapt train.py
 
         _, flow, flow_bw = unsupervised_loss(
-            (im1, im2),
+            (im1, im2, mask_image_1, mask_image_2),
             normalization=data_input.get_normalization(),
             params=params, augment=False, return_flow=True)
 
@@ -200,7 +200,7 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
                         sys.stdout.write('\r')
 
                     start = timeit.default_timer()
-                    #R,t = evaluate(file, file_err, R, t,  matrix_input, num_iters, image_results[1:5], FLAGS.mode)
+                    R,t = evaluate(file, file_err, R, t,  matrix_input, num_iters, image_results[1:5], FLAGS.mode)
                     stop = timeit.default_timer()
                     print('Time: ', stop - start)
 
@@ -227,7 +227,17 @@ def main(argv=None):
 
     kconfig = default_config['train_kitti']
     layers = kconfig.get('layers').split(', ')
+    mask_layers = kconfig.get('mask_layers')
+    if mask_layers is not None:
+        mask_layers = kconfig.get('mask_layers').split(',')
+    num_layers = 0
+    for layer in layers:
+        if layer == 'rgb_cartesian':
+            num_layers = num_layers + 3
+        else:
+            num_layers = num_layers + 1
     print(layers)
+    print(mask_layers)
 
     # Input odometry data
     matrix_dir = dirs['odo_dirs'] + FLAGS.eval_txt + '.txt'
@@ -235,7 +245,7 @@ def main(argv=None):
 
     data = KITTIData(dirs['data'], development=True)
     data_input = KITTIInput(data, batch_size=1, normalize=False,
-                                 dims=(640, 640), layers=layers)
+                                 dims=(640, 640), layers=layers, num_layers=num_layers, mask_layers=mask_layers)
     input_fn = getattr(data_input, 'input_' + FLAGS.variant)
 
     for name in FLAGS.ex.split(','):
