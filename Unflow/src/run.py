@@ -58,7 +58,7 @@ def main(argv=None):
             num_layers = num_layers + 3
         else:
             num_layers = num_layers + 1
-    print(layers, num_layers)
+    print(layers)
     print(mask_layers)
 
     kdata = KITTIData(data_dir=dirs['data'],

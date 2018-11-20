@@ -125,10 +125,10 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
         im1 = resize_input(im1, height, width, layers, resized_h, resized_w)
         im2 = resize_input(im2, height, width, layers, resized_h, resized_w) # TODO adapt train.py
 
-        _, flow, flow_bw = unsupervised_loss(
-            (im1, im2, mask_image_1, mask_image_2),
+        _, flow, flow_bw, im1 = unsupervised_loss(
+            (im1, im2, mask_image_1, mask_image_2), 0,
             normalization=data_input.get_normalization(),
-            params=params, augment=False, return_flow=True)
+            params=params, augment=False, return_flow=True, evaluate=True)
 
         im1 = resize_output(im1, height, width, layers)
         im2 = resize_output(im2, height, width, layers)
@@ -141,7 +141,7 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
         # Evaluate flow with odometry data
         flow_u, flow_v = tf.unstack(flow, axis=3)
 
-        image_slots = [#((im1), 'im1'),
+        image_slots = [((im1[:, :, :, 0:3]), 'im1'),
                        (flow_to_color(flow), 'flow'),
                        (multi_channels_to_grayscale(im1, layers), 'gray_img'),
                        (tf.reshape(multi_channels_to_grayscale(im2, layers), [-1]), 'img_array'),
@@ -200,7 +200,7 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
                         sys.stdout.write('\r')
 
                     start = timeit.default_timer()
-                    R,t = evaluate(file, file_err, R, t,  matrix_input, num_iters, image_results[1:5], FLAGS.mode)
+                    #R,t = evaluate(file, file_err, R, t,  matrix_input, num_iters, image_results[1:5], FLAGS.mode)
                     stop = timeit.default_timer()
                     print('Time: ', stop - start)
 
@@ -222,9 +222,10 @@ def main(argv=None):
     print("-- evaluating: on {} pairs from {}/{}"
           .format(FLAGS.num, FLAGS.dataset, FLAGS.variant))
 
-    default_config = config_dict()
+    for name in FLAGS.ex.split(','):
+        config_path = '/home/zhang/UnFlow/log/ex/' + name + '/config.ini'
+    default_config = config_dict(config_path)
     dirs = default_config['dirs']
-
     kconfig = default_config['train_kitti']
     layers = kconfig.get('layers').split(', ')
     mask_layers = kconfig.get('mask_layers')
@@ -245,11 +246,11 @@ def main(argv=None):
 
     data = KITTIData(dirs['data'], development=True)
     data_input = KITTIInput(data, batch_size=1, normalize=False,
-                                 dims=(640, 640), layers=layers, num_layers=num_layers, mask_layers=mask_layers)
+                            dims=(640, 640), layers=layers, num_layers=num_layers, mask_layers=mask_layers)
     input_fn = getattr(data_input, 'input_' + FLAGS.variant)
 
     for name in FLAGS.ex.split(','):
-        _evaluate_experiment(name, input_fn, data_input, matrix_input, len(layers))
+        _evaluate_experiment(name, input_fn, data_input, matrix_input, num_layers)
 
 if __name__ == '__main__':
     tf.app.run()

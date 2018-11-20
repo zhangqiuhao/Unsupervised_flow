@@ -27,6 +27,7 @@ def restore_networks(sess, params, ckpt, ckpt_path=None):
     flownet_num = len(spec)
 
     net_names = ['flownet_c'] + ['stack_{}_flownet'.format(i+1) for i in range(flownet_num - 1)]
+    #net_names =['pwc_encoder'] + ['pwc_decoder']
     assert len(finetune) <= flownet_num
     # Save all trained networks, restore all networks which are kept fixed
     if train_all:
@@ -137,12 +138,11 @@ class Trainer():
         assert (max_iter - start_iter + 1) % save_interval == 0
         for i in range(start_iter, max_iter + 1, save_interval):
             self.train(i, i + save_interval - 1, i - (min_iter + 1))
-            #self.eval(1)
 
         if self.plot_proc:
             self.plot_proc.join()
 
-    def get_train_and_loss_ops(self, batch, learning_rate, global_step):
+    def get_train_and_loss_ops(self, batch, learning_rate, start_iter):
         if self.params['flownet'] == 'resnet':
             opt = tf.train.MomentumOptimizer(learning_rate, 0.9)
         else:
@@ -155,7 +155,7 @@ class Trainer():
                 _add_image_summaries()
 
         if len(self.devices) == 1:
-            loss_ = self.loss_fn(batch, self.params, self.normalization)
+            loss_ = self.loss_fn(batch, start_iter, self.params, self.normalization)
             train_op = opt.minimize(loss_)
             _add_summaries()
         else:
@@ -164,7 +164,7 @@ class Trainer():
                 for i, devid in enumerate(self.devices):
                     with tf.device(devid):
                         with tf.name_scope('tower_{}'.format(i)) as scope:
-                            loss_ = self.loss_fn(batch, self.params, self.normalization)
+                            loss_ = self.loss_fn(batch, start_iter, self.params, self.normalization)
                             _add_summaries()
 
                             # Reuse variables for the next tower.
@@ -195,7 +195,7 @@ class Trainer():
 
             global_step_ = tf.placeholder(tf.int32, name="global_step")
 
-            train_op, loss_ = self.get_train_and_loss_ops(batch, learning_rate_, global_step_)
+            train_op, loss_ = self.get_train_and_loss_ops(batch, learning_rate_, start_iter)
 
             summaries = tf.get_collection(tf.GraphKeys.SUMMARIES)
             summary_ = tf.summary.merge(summaries)
@@ -242,7 +242,9 @@ class Trainer():
                         else:
                             learning_rate = self.params['learning_rate']
 
+                    gauss_sigma = 5.0
                     feed_dict = {learning_rate_: learning_rate, global_step_: i}
+
                     _, loss = sess.run(
                         [train_op, loss_],
                         feed_dict=feed_dict,
@@ -254,12 +256,13 @@ class Trainer():
                         summary_writer.add_summary(summary, i)
                         print("-- train: i = {}, loss = {}".format(i, loss))
 
-                save_path =  os.path.join(self.ckpt_dir, 'model.ckpt')
+                save_path = os.path.join(self.ckpt_dir, 'model.ckpt')
                 saver.save(sess, save_path, global_step=max_iter)
 
                 summary_writer.close()
                 coord.request_stop()
                 coord.join(threads)
+
 
 def average_gradients(tower_grads):
     """Calculate the average gradient for each shared variable across all towers.

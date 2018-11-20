@@ -79,7 +79,6 @@ class Input():
 
     def get_normalization(self):
         #[104.920005, 110.1753, 114.785955]
-        print(self.num_layers)
         self.mean = [127.5] * self.num_layers
         return self.mean, self.stddev
 

@@ -140,7 +140,10 @@ def read_png_image(filenames, layers, mask_layers, num_epochs=None):
             filename_queue = tf.train.string_input_producer(filenames_with_layer,
                                                             shuffle=False, capacity=len(filenames_with_layer))
             _, value = reader.read(filename_queue)
-            image_uint8 = tf.image.decode_png(value, channels=1)
+            if layer == '_rgb_cartesian.png':
+                image_uint8 = tf.image.decode_png(value, channels=3)
+            else:
+                image_uint8 = tf.image.decode_png(value, channels=1)
             image_float32 = tf.cast(image_uint8, tf.float32)
             image.append(image_float32)
     if mask_layers is not None and mask_layers in ['z_max_occlusions_cartesian']:

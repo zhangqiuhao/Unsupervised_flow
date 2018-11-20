@@ -1,6 +1,7 @@
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import numpy as np
+import scipy.stats as st
 
 from .augment import random_affine, random_photometric
 from .flow_util import flow_to_color
@@ -9,7 +10,7 @@ from .losses import compute_losses, create_border_mask
 from ..ops import downsample
 from .image_warp import image_warp
 from .flownet import flownet, FLOW_SCALE
-
+from .PWCNet import pwcnet
 
 # REGISTER ALL POSSIBLE LOSS TERMS
 LOSSES = ['occ', 'sym', 'fb', 'grad', 'ternary', 'photo', 'smooth_1st', 'smooth_2nd']
@@ -24,13 +25,14 @@ def _track_image(op, name):
     tf.add_to_collection('train_images', tf.identity(op, name=name))
 
 
-def unsupervised_loss(batch, params, normalization=None, augment=True,
-                      return_flow=False):
+def unsupervised_loss(batch, start_iter, params, normalization=None, augment=True,
+                      return_flow=False, evaluate=False):
     params.get('')
     channel_mean = tf.constant(normalization[0]) / 255.0
     im1, im2, im1_mask, im2_mask = batch
     im1 = im1 / 255.0
     im2 = im2 / 255.0
+
     im_shape = tf.shape(im1)[1:3]
     layers = params.get('layers').split(', ')
     num_layer = 0
@@ -39,7 +41,16 @@ def unsupervised_loss(batch, params, normalization=None, augment=True,
             num_layer = num_layer + 3
         else:
             num_layer = num_layer + 1
-    # -------------------------------------------------------------------------
+
+    if not evaluate:
+        print('Gaussblur')
+        count_step = tf.Variable(start_iter, name='global_step', trainable=False, dtype=tf.int32)
+        gauss_sigma = tf.ceil(5.0 - tf.cast(count_step, dtype=tf.float32) / 20000.0)
+        mean = tf.constant(0.0, dtype=tf.float32)
+
+        [im1, im2] = tf.cond(gauss_sigma > 0, lambda: gaussian_blur(im1, im2, gauss_sigma*4+1, mean, gauss_sigma,
+                                                                    num_layer), lambda: [im1, im2])
+
     # Data & mask augmentation
     border_mask = create_border_mask(im1, 0.1)
 
@@ -87,6 +98,8 @@ def unsupervised_loss(batch, params, normalization=None, augment=True,
                                  full_resolution=full_resolution,
                                  backward_flow=True,
                                  train_all=train_all)
+
+    #flows_fw, flows_bw = pwcnet(im1_photo, im2_photo, backward_flow=True)
 
     flows_fw = flows_fw[-1]
     flows_bw = flows_bw[-1]
@@ -174,4 +187,28 @@ def unsupervised_loss(batch, params, normalization=None, augment=True,
     if not return_flow:
         return final_loss
 
-    return final_loss, final_flow_fw, final_flow_bw
+    return final_loss, final_flow_fw, final_flow_bw, im1
+
+
+def gaussian_kernel(size, mean, std, layers):
+    """Makes 2D gaussian Kernel for convolution."""
+
+    d = tf.distributions.Normal(mean, std)
+
+    vals = d.prob(tf.range(start=-size, limit=size + 1, dtype=tf.float32))
+
+    gauss_kernel = tf.einsum('i,j->ij', vals, vals)
+    gauss_kernel / tf.reduce_sum(gauss_kernel)
+    gauss_kernel = gauss_kernel[:, :, tf.newaxis, tf.newaxis]
+    output = gauss_kernel
+    for i in range(layers-1):
+        output = tf.concat([output, gauss_kernel], axis=2)
+
+    return output
+
+
+def gaussian_blur(im1, im2, size, mean, std, layers):
+    gauss_kernel = gaussian_kernel(size, mean, std, layers)
+    im1 = tf.nn.depthwise_conv2d(im1, gauss_kernel, strides=[1, 1, 1, 1], padding="SAME")
+    im2 = tf.nn.depthwise_conv2d(im2, gauss_kernel, strides=[1, 1, 1, 1], padding="SAME")
+    return [im1, im2]
