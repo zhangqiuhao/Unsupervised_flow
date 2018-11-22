@@ -46,7 +46,7 @@ class Input():
     stddev = 1 / 0.0039216
     mean = []
 
-    def __init__(self, data, batch_size, dims, layers, num_layers, mask_layers, *,
+    def __init__(self, data, num, batch_size, dims, layers, num_layers, mask_layers, *,
                  num_threads=1, normalize=True,
                  skipped_frames=False):
         assert len(dims) == 2
@@ -59,6 +59,7 @@ class Input():
         self.normalize = normalize
         self.skipped_frames = skipped_frames
         self.num_layers = num_layers
+        self.num = num
 
     def _resize_crop_or_pad(self, tensor):
         height, width = self.dims

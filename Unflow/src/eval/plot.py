@@ -6,15 +6,11 @@ import matplotlib.pyplot as plt
 from matplotlib.path import Path
 import matplotlib.patches as patches
 
-def main(args):
+
+def KittiPlotTrajectories(sequence, num):
     np.set_printoptions(suppress=True)
 
-    try:
-        sequence = int(args[1])
-    except:
-        sequence = 9
-
-    inpath_tf_oxt = '/mrtstorage/datasets/kitti/odometry/data_odometry_groundtruth/dataset/poses/08.txt'
+    inpath_tf_oxt = '/mrtstorage/datasets/kitti/odometry/data_odometry_groundtruth/dataset/poses/'+sequence+'.txt'
     inpath_tf_is = '/home/zhang/odo.txt'
 
     with open(inpath_tf_oxt, 'r') as f:
@@ -27,7 +23,7 @@ def main(args):
 
     ########
     start = 0
-    end = 154
+    end = num
     ########
 
     points_oxt = points_oxt[start:end]
@@ -47,7 +43,4 @@ def main(args):
     ax.set_ylabel('y in meter')
 
     plt.autoscale(enable=True)
-    plt.show()
-
-if __name__ == "__main__":
-    main(sys.argv)
+    plt.savefig('/home/zhang/odometry.png')

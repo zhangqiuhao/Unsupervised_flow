@@ -23,6 +23,8 @@ from e2eflow.core.losses import DISOCC_THRESH, occlusion, create_outgoing_mask, 
 from e2eflow.util import convert_input_strings
 from Matrix import Matrix
 from evaluation_funtion import evaluate
+from eval.plot import KittiPlotTrajectories
+from eval.eval_err import eval_err
 
 
 tf.app.flags.DEFINE_string('dataset', 'kitti',
@@ -31,12 +33,12 @@ tf.app.flags.DEFINE_string('variant', 'grid_map',
                            'Name of variant to evaluate on.')
 tf.app.flags.DEFINE_string('ex', '',
                            'Experiment name(s) (can be comma separated list).')
-tf.app.flags.DEFINE_string('eval_txt', '08',
+tf.app.flags.DEFINE_string('eval_txt', '10',
                            'Number of evaluate dataset')
 tf.app.flags.DEFINE_string('mode', 'estimated',
                            'Choose between real or estimated self movement')
 
-tf.app.flags.DEFINE_integer('num', 4000,
+tf.app.flags.DEFINE_integer('num', 1200,
                             'Number of examples to evaluate. Set to -1 to evaluate all.')
 tf.app.flags.DEFINE_integer('num_vis', -1,
                             'Number of evalutations to visualize. Set to -1 to visualize all.')
@@ -141,7 +143,7 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
         # Evaluate flow with odometry data
         flow_u, flow_v = tf.unstack(flow, axis=3)
 
-        image_slots = [((im1[:, :, :, 0:3]), 'im1'),
+        image_slots = [#((im1[:, :, :, 0:3]), 'im1'),
                        (flow_to_color(flow), 'flow'),
                        (multi_channels_to_grayscale(im1, layers), 'gray_img'),
                        (tf.reshape(multi_channels_to_grayscale(im2, layers), [-1]), 'img_array'),
@@ -200,7 +202,7 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
                         sys.stdout.write('\r')
 
                     start = timeit.default_timer()
-                    #R,t = evaluate(file, file_err, R, t,  matrix_input, num_iters, image_results[1:5], FLAGS.mode)
+                    R,t = evaluate(file, file_err, R, t,  matrix_input, num_iters, image_results[1:5], FLAGS.mode)
                     stop = timeit.default_timer()
                     print('Time: ', stop - start)
 
@@ -245,12 +247,15 @@ def main(argv=None):
     matrix_input = Matrix(dir=matrix_dir)
 
     data = KITTIData(dirs['data'], development=True)
-    data_input = KITTIInput(data, batch_size=1, normalize=False,
+    data_input = KITTIInput(data, str(FLAGS.eval_txt), batch_size=1, normalize=False,
                             dims=(640, 640), layers=layers, num_layers=num_layers, mask_layers=mask_layers)
     input_fn = getattr(data_input, 'input_' + FLAGS.variant)
 
     for name in FLAGS.ex.split(','):
         _evaluate_experiment(name, input_fn, data_input, matrix_input, num_layers)
+
+    KittiPlotTrajectories(FLAGS.eval_txt, FLAGS.num)
+    eval_err()
 
 if __name__ == '__main__':
     tf.app.run()
