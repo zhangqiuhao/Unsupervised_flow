@@ -22,23 +22,23 @@ from e2eflow.gui import display
 from e2eflow.core.losses import DISOCC_THRESH, occlusion, create_outgoing_mask, multi_channels_to_grayscale
 from e2eflow.util import convert_input_strings
 from Matrix import Matrix
-from evaluation_funtion import evaluate
+from evaluation_funtion import evaluate, rotationMatrixToEulerAngles
 from eval.plot import KittiPlotTrajectories
 from eval.eval_err import eval_err
 
 
 tf.app.flags.DEFINE_string('dataset', 'kitti',
-                            'Name of dataset to evaluate on. One of {kitti, sintel, chairs, mdb}.')
+                           'Name of dataset to evaluate on. One of {kitti, sintel, chairs, mdb}.')
 tf.app.flags.DEFINE_string('variant', 'grid_map',
                            'Name of variant to evaluate on.')
 tf.app.flags.DEFINE_string('ex', '',
                            'Experiment name(s) (can be comma separated list).')
-tf.app.flags.DEFINE_string('eval_txt', '10',
+tf.app.flags.DEFINE_string('eval_txt', '11',
                            'Number of evaluate dataset')
 tf.app.flags.DEFINE_string('mode', 'estimated',
                            'Choose between real or estimated self movement')
 
-tf.app.flags.DEFINE_integer('num', 1200,
+tf.app.flags.DEFINE_integer('num', 900,
                             'Number of examples to evaluate. Set to -1 to evaluate all.')
 tf.app.flags.DEFINE_integer('num_vis', -1,
                             'Number of evalutations to visualize. Set to -1 to visualize all.')
@@ -170,8 +170,8 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
             sess.run(tf.global_variables_initializer())
             sess.run(tf.local_variables_initializer())
 
-            R = 0.0
-            t = matrix_input.return_matrix(2)[:,3]
+            R = rotationMatrixToEulerAngles(matrix_input.return_matrix(2)[:, 0:3])[2]
+            t = matrix_input.return_matrix(2)[:, 3]
             file = open("/home/zhang/odo.txt", "w")
             file_err = open("/home/zhang/odo_err.txt", "w")
 
@@ -202,7 +202,7 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
                         sys.stdout.write('\r')
 
                     start = timeit.default_timer()
-                    R,t = evaluate(file, file_err, R, t,  matrix_input, num_iters, image_results[1:5], FLAGS.mode)
+                    R, t = evaluate(file, file_err, R, t,  matrix_input, num_iters, image_results[1:5], FLAGS.mode)
                     stop = timeit.default_timer()
                     print('Time: ', stop - start)
 

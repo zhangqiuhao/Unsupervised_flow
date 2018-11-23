@@ -4,7 +4,7 @@ from PIL import Image
 import os
 import math
 from matplotlib.colors import hsv_to_rgb
-import statistics
+import random
 
 from Matrix import Matrix
 
@@ -28,7 +28,7 @@ def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, image_result
     mask_out_boundry = mask_out_boundry.flatten()
     mask = np.logical_and(mask_array_non_zero, mask_out_boundry)
 
-    img_v, img_u = _calculate_rotation_midpoint(height, width, flow_v_array, flow_u_array, mask)
+    img_v, img_u, R_center = _calculate_rotation_midpoint(height, width, flow_v_array, flow_u_array, mask)
 
     matrix_flow_v = img_v + flow_v_array
     matrix_flow_u = img_u - flow_u_array
@@ -38,15 +38,15 @@ def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, image_result
 
     for idx, val in enumerate(mask):
         if val:
-            matrix_im1.append([matrix_flow_v[idx], matrix_flow_u[idx], 0])
-            matrix_im2.append([img_v[idx], img_u[idx], 0])
+            matrix_im1.append([img_v[idx], img_u[idx], 0])
+            matrix_im2.append([matrix_flow_v[idx], matrix_flow_u[idx], 0])
 
     matrix_im1 = np.transpose(np.asarray(matrix_im1))
     matrix_im2 = np.transpose(np.asarray(matrix_im2))
 
-    print("Number of points: ", matrix_im1.shape[1])
-
-    R,c,t = _ralign(matrix_im1, matrix_im2)
+    best_model, best_ic = ransac(matrix_im1, matrix_im2)
+    [R, c, t] = best_model
+    #R, c, t = _ralign(matrix_im1, matrix_im2)
 
     #read now and previous groundtruth
     matrix_gt = matrix_input.return_matrix(num_iters + 3)
@@ -55,40 +55,40 @@ def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, image_result
     t_gt = matrix_gt[:,3]
     R_gt_pr = matrix_gt_pr[:,0:3]
     t_gt_pr = matrix_gt_pr[:,3]
-    R_gt = _rotationMatrixToEulerAngles(R_gt)[1]
-    R_gt_pr = _rotationMatrixToEulerAngles(R_gt_pr)[1]
+    R_gt = rotationMatrixToEulerAngles(R_gt)[1]
+    R_gt_pr = rotationMatrixToEulerAngles(R_gt_pr)[1]
 
     delta_R_is = R_gt - R_gt_pr
     delta_t_x = t_gt[2] - t_gt_pr[2]
     delta_t_y = -(t_gt[0] - t_gt_pr[0])
 
-    t_x = -(t[0] * np.cos(old_R) - t[1] * np.sin(old_R))
-    t_y = t[0] * np.sin(old_R) + t[1] * np.cos(old_R)
+    t_x = t[0] * np.cos(old_R) - t[1] * np.sin(old_R)
+    t_y = -(t[0] * np.sin(old_R) + t[1] * np.cos(old_R))
 
-    R_now = - _rotationMatrixToEulerAngles(R)[2]
+    R_now = rotationMatrixToEulerAngles(R)[2]
 
     R_err = R_now - delta_R_is
     t_x_err = t_x - delta_t_x.item(0)
     t_y_err = t_y - delta_t_y.item(0)
 
     R = old_R + R_now
-    t_rotated = [(t_x+old_t[0]).item(0) , (t_y+old_t[1]).item(0)]
+    t_rotated = [(t_x+old_t[0]).item(0), (t_y+old_t[1]).item(0)]
     file.write("0 0 0 " + str(t_rotated[0]) + " 0 0 0 " + str(t_rotated[1]) + " 0 " + str(R_now) + " " + str(t[0]) + " " + str(t[1]) + "\n")
-    file_err.write(str(R_err) + " " + str(t_x_err) +  " " + str(t_y_err) + "\n")
+    file_err.write(str(R_err) + " " + str(t_x_err) + " " + str(t_y_err) + "\n")
 
     output_flow = np.zeros([height, width, 2])
     #Save flow without estimated self movement
     if mode == "estimated":
         t_1 = t[1] * 10.0
         t_0 = t[0] * 10.0
-        flow_u_without = (flow_u_array + t_1 + img_u * np.cos(R_now) + img_v * np.sin(R_now) - img_u) * mask_array_non_zero
-        flow_v_without = (flow_v_array + t_0 + img_u * np.sin(R_now) - img_v * np.cos(R_now) + img_v) * mask_array_non_zero
+        flow_u_without = (flow_u_array - t_1 + img_u * np.cos(R_now) + img_v * np.sin(R_now) - img_u) * mask_array_non_zero
+        flow_v_without = (flow_v_array - t_0 + img_u * np.sin(R_now) - img_v * np.cos(R_now) + img_v) * mask_array_non_zero
     elif mode == 'real':
     #Save flow without real self movement
         t_0 = (-(delta_t_x.item(0) * np.cos(old_R) - delta_t_y.item(0) * np.sin(old_R))) * 10.0
         t_1 = (delta_t_x.item(0) * np.sin(old_R) + delta_t_y.item(0) * np.cos(old_R)) * 10.0
-        flow_u_without = (flow_u_array + t_1 + img_u * np.cos(delta_R_is) + img_v * np.sin(delta_R_is) - img_u) * mask_array_non_zero
-        flow_v_without = (flow_v_array + t_0 + img_u * np.sin(delta_R_is) - img_v * np.cos(delta_R_is) + img_v) * mask_array_non_zero
+        flow_u_without = (flow_u_array - t_1 + img_u * np.cos(delta_R_is) + img_v * np.sin(delta_R_is) - img_u) * mask_array_non_zero
+        flow_v_without = (flow_v_array - t_0 + img_u * np.sin(delta_R_is) - img_v * np.cos(delta_R_is) + img_v) * mask_array_non_zero
     else:
         print('Should choose between real and estimated')
 
@@ -105,6 +105,7 @@ def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, image_result
 
     return R, t_rotated
 
+
 def _convert_flow_to_rgb(flow):
     n = 2
     max_flow = 20
@@ -118,12 +119,13 @@ def _convert_flow_to_rgb(flow):
     im_v = np.clip(n - im_s, 0, 1)
 
     im_hsv = np.zeros((flow.shape[0], flow.shape[1], 3))
-    im_hsv[:,:, 0] = im_h
-    im_hsv[:,:, 1] = im_s
-    im_hsv[:,:, 2] = im_v
+    im_hsv[:, :, 0] = im_h
+    im_hsv[:, :, 1] = im_s
+    im_hsv[:, :, 2] = im_v
     im = hsv_to_rgb(im_hsv)
 
     return im
+
 
 def _ralign(X,Y):
     m, n = X.shape
@@ -156,12 +158,12 @@ def _ralign(X,Y):
             t = np.zeros(2)
             return R,c,t
 
-    R = np.dot( np.dot(U, S ), V.T)
+    R = np.dot(np.dot(U, S), V.T)
 
     c = np.trace(np.dot(np.diag(D), S)) / sx
     t = my - c * np.dot(R, mx)
 
-    return R,c,t*0.1
+    return R, c, t*0.1
 
 
 # Checks if a matrix is a valid rotation matrix.
@@ -176,7 +178,7 @@ def _isRotationMatrix(R):
 # Calculates rotation matrix to euler angles
 # The result is the same as MATLAB except the order
 # of the euler angles ( x and z are swapped ).
-def _rotationMatrixToEulerAngles(R):
+def rotationMatrixToEulerAngles(R):
     assert (_isRotationMatrix(R))
 
     sy = math.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
@@ -218,7 +220,7 @@ def _calculate_rotation_midpoint(height, width, flow_v_array, flow_u_array, mask
         img_v[v, :] = v
     for u in range(width):
         img_u[:, u] = u
-    if check_parallel > 1.0:
+    if check_parallel > 0.9:
         print("Percentage:" + str(check_parallel) + " Estimating rotation midpoint")
         img_v_flat = img_v.flatten()
         img_u_flat = img_u.flatten()
@@ -229,9 +231,49 @@ def _calculate_rotation_midpoint(height, width, flow_v_array, flow_u_array, mask
         flow_none_zeros_T = np.transpose(flow_none_zeros)
         center = np.dot(np.dot(np.linalg.inv(np.dot(flow_none_zeros_T, flow_none_zeros)), flow_none_zeros_T), Y)
         print(center)
-        img_v = center[0] - img_v
-        img_u = img_u - center[1]
     else:
-        img_v = height - img_v
-        img_u = img_u - width / 2.0
-    return img_v.flatten(), img_u.flatten()
+        center = [height, width / 2.0]
+
+    img_v = center[0] - img_v
+    img_u = img_u - center[1]
+    return img_v.flatten(), img_u.flatten(), center
+
+
+def ransac(X, Y, sample_size=1000, max_iterations=100, stop_at_goal=True, random_seed=None):
+    print("Number of points: ", X.shape[1])
+    n = X.shape[1]
+    goal_inliers = n * 0.7
+
+    best_ic = 0
+    best_model = None
+
+    data = np.concatenate([X, Y], axis=0)
+    data = data.T
+    random.seed(random_seed)
+
+    # random.sample cannot deal with "data" being a numpy array
+    data = list(data)
+    for i in range(max_iterations):
+        s = random.sample(data, int(sample_size))
+        s = np.asarray(s)
+        array_1 = np.transpose(s[:, :3])
+        array_2 = np.transpose(s[:, 3:])
+
+        R, c, t = _ralign(array_1, array_2)
+        ic = count_inlier(R, c, t*10, X, Y)
+
+        if ic > best_ic:
+            best_ic = ic
+            best_model = [R, c, t]
+            if ic > goal_inliers and stop_at_goal:
+                break
+
+    return best_model, best_ic
+
+
+def count_inlier(R, c, t, array_1, array_2):
+    transformed_img = np.add(np.dot(c * R, array_1), np.reshape(t, (3, 1)))
+    err = np.sum(np.square(np.subtract(transformed_img, array_2)), axis=0)
+    ic = len(np.where(err < 10)[0])
+    return ic
+
