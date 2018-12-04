@@ -44,7 +44,7 @@ def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, image_result
     matrix_im1 = np.transpose(np.asarray(matrix_im1))
     matrix_im2 = np.transpose(np.asarray(matrix_im2))
 
-    best_model, best_ic = ransac(matrix_im1, matrix_im2)
+    best_model = ransac(matrix_im1, matrix_im2)
     [R, c, t] = best_model
     #R, c, t = _ralign(matrix_im1, matrix_im2)
 
@@ -111,7 +111,7 @@ def _convert_flow_to_rgb(flow):
     max_flow = 20
     flow_u = flow[:,:,0]
     flow_v = flow[:,:,1]
-    mag = np.sqrt(np.sum(np.square(flow), axis = 2))
+    mag = np.sqrt(np.sum(np.square(flow), axis=2))
     angle = np.arctan2(flow_v, flow_u)
 
     im_h = np.mod(angle / (2 * np.pi) + 1.0, 1.0)
@@ -220,16 +220,17 @@ def _calculate_rotation_midpoint(height, width, flow_v_array, flow_u_array, mask
         img_v[v, :] = v
     for u in range(width):
         img_u[:, u] = u
-    if check_parallel > 0.9:
+    if check_parallel > 1.0:
         print("Percentage:" + str(check_parallel) + " Estimating rotation midpoint")
-        img_v_flat = img_v.flatten()
-        img_u_flat = img_u.flatten()
+        img_v_flat = np.asarray(img_v.flatten())
+        img_u_flat = np.asarray(img_u.flatten())
         Y = []
+        img_VU = []
         for idx, val in enumerate(mask):
             if val:
                 Y.append(flow_v_array[idx] * img_v_flat[idx] + flow_u_array[idx] * img_u_flat[idx])
-        flow_none_zeros_T = np.transpose(flow_none_zeros)
-        center = np.dot(np.dot(np.linalg.inv(np.dot(flow_none_zeros_T, flow_none_zeros)), flow_none_zeros_T), Y)
+                img_VU.append([img_v_flat[idx], img_u_flat[idx]])
+        center = center_ransac(flow_none_zeros, Y, img_VU)
         print(center)
     else:
         center = [height, width / 2.0]
@@ -239,9 +240,9 @@ def _calculate_rotation_midpoint(height, width, flow_v_array, flow_u_array, mask
     return img_v.flatten(), img_u.flatten(), center
 
 
-def ransac(X, Y, sample_size=1000, max_iterations=100, stop_at_goal=True, random_seed=None):
-    print("Number of points: ", X.shape[1])
+def ransac(X, Y, sample_size=10, max_iterations=100, stop_at_goal=True, random_seed=None):
     n = X.shape[1]
+    print("Number of points: ", n)
     goal_inliers = n * 0.7
 
     best_ic = 0
@@ -268,7 +269,7 @@ def ransac(X, Y, sample_size=1000, max_iterations=100, stop_at_goal=True, random
             if ic > goal_inliers and stop_at_goal:
                 break
 
-    return best_model, best_ic
+    return best_model
 
 
 def count_inlier(R, c, t, array_1, array_2):
@@ -277,3 +278,44 @@ def count_inlier(R, c, t, array_1, array_2):
     ic = len(np.where(err < 10)[0])
     return ic
 
+
+def center_ransac(X, Y, img_VU, sample_size=50, max_iterations=100, stop_at_goal=True, random_seed=None):
+    n = X.shape[0]
+    print("Number of points: ", n)
+    goal_inliers = n * 0.7
+
+    best_ic = 0
+    best_model = None
+
+    Y = np.reshape(Y, (n, 1))
+    data = np.concatenate([X, Y], axis=1)
+    random.seed(random_seed)
+
+    # random.sample cannot deal with "data" being a numpy array
+    data = list(data)
+    for i in range(max_iterations):
+        s = random.sample(data, int(sample_size))
+        s = np.asarray(s)
+        array_1 = s[:, :2]
+        array_2 = s[:, 2:]
+
+        array_1_T = np.transpose(array_1)
+        center = np.dot(np.dot(np.linalg.inv(np.dot(array_1_T, array_1)), array_1_T), array_2)
+        ic = count_center_inlier(center, X, img_VU)
+
+        if ic > best_ic:
+            best_ic = ic
+            best_model = center
+            if ic > goal_inliers and stop_at_goal:
+                break
+    return best_model
+
+
+def count_center_inlier(center, X, img_VU):
+    normal_vector = np.subtract(img_VU, np.transpose(center))
+    normal_vector = np.reshape(normal_vector, (normal_vector.shape[0], 1, 2))
+    X = np.reshape(X, (X.shape[0], 2, 1))
+    err = np.reshape(np.einsum('ipq,iqr->ipr', normal_vector, X), (X.shape[0]))
+    ic = len(np.where(np.abs(err) < 10))
+    print(ic)
+    return ic

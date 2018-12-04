@@ -33,12 +33,12 @@ tf.app.flags.DEFINE_string('variant', 'grid_map',
                            'Name of variant to evaluate on.')
 tf.app.flags.DEFINE_string('ex', '',
                            'Experiment name(s) (can be comma separated list).')
-tf.app.flags.DEFINE_string('eval_txt', '11',
+tf.app.flags.DEFINE_string('eval_txt', '08',
                            'Number of evaluate dataset')
 tf.app.flags.DEFINE_string('mode', 'estimated',
                            'Choose between real or estimated self movement')
 
-tf.app.flags.DEFINE_integer('num', 900,
+tf.app.flags.DEFINE_integer('num', 4000,
                             'Number of examples to evaluate. Set to -1 to evaluate all.')
 tf.app.flags.DEFINE_integer('num_vis', -1,
                             'Number of evalutations to visualize. Set to -1 to visualize all.')
@@ -119,6 +119,8 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
         raise RuntimeError("Error: experiment must contain a checkpoint")
     ckpt_path = exp_dir + "/" + os.path.basename(ckpt.model_checkpoint_path)
 
+    print(ckpt_path)
+
     with tf.Graph().as_default(): #, tf.device('gpu:' + FLAGS.gpu):
         inputs = input_fn()
         im1, im2, mask_image_1, mask_image_2, input_shape = inputs[:5]
@@ -128,9 +130,9 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
         im2 = resize_input(im2, height, width, layers, resized_h, resized_w) # TODO adapt train.py
 
         _, flow, flow_bw, im1 = unsupervised_loss(
-            (im1, im2, mask_image_1, mask_image_2), 0,
+            (im1, im2, mask_image_1, mask_image_2), 80001,
             normalization=data_input.get_normalization(),
-            params=params, augment=False, return_flow=True, evaluate=True)
+            params=params, augment=False, return_flow=True, evaluate=False)
 
         im1 = resize_output(im1, height, width, layers)
         im2 = resize_output(im2, height, width, layers)
@@ -239,6 +241,8 @@ def main(argv=None):
             num_layers = num_layers + 3
         else:
             num_layers = num_layers + 1
+    height = kconfig.get('height')
+    width = kconfig.get('width')
     print(layers)
     print(mask_layers)
 
@@ -248,7 +252,7 @@ def main(argv=None):
 
     data = KITTIData(dirs['data'], development=True)
     data_input = KITTIInput(data, str(FLAGS.eval_txt), batch_size=1, normalize=False,
-                            dims=(640, 640), layers=layers, num_layers=num_layers, mask_layers=mask_layers)
+                            dims=(height, width), layers=layers, num_layers=num_layers, mask_layers=mask_layers)
     input_fn = getattr(data_input, 'input_' + FLAGS.variant)
 
     for name in FLAGS.ex.split(','):
@@ -256,6 +260,7 @@ def main(argv=None):
 
     KittiPlotTrajectories(FLAGS.eval_txt, FLAGS.num)
     eval_err()
+
 
 if __name__ == '__main__':
     tf.app.run()

@@ -122,7 +122,7 @@ class Input():
         image_1 = self._preprocess_image(input_1, self.num_layers)
         image_2 = self._preprocess_image(input_2, self.num_layers)
 
-        return tf.shape(input_1), image_1, image_2, mask_image_1, mask_image_2
+        return tf.shape(image_1), image_1, image_2, mask_image_1, mask_image_2
 
     def get_normalization(self):
         #[104.920005, 110.1753, 114.785955]

@@ -55,6 +55,7 @@ def unsupervised_loss(batch, start_iter, params, normalization=None, augment=Tru
     border_mask = create_border_mask(im1, 0.1)
 
     if augment:
+        '''
         im1_geo, im2_geo, border_mask_global, im1_mask_global, im2_mask_global = random_affine(
             [im1, im2, border_mask, im1_mask, im2_mask],
             horizontal_flipping=True,
@@ -75,9 +76,31 @@ def unsupervised_loss(batch, start_iter, params, normalization=None, augment=Tru
             noise_stddev=0.04, min_contrast=-0.3, max_contrast=0.3,
             brightness_stddev=0.02, min_colour=0.9, max_colour=1.1,
             min_gamma=0.7, max_gamma=1.5)
+   
+        '''
+        im1_geo, im2_geo, border_mask_global = random_affine(
+            [im1, im2, border_mask],
+            horizontal_flipping=True,
+            min_scale=0.9, max_scale=1.1
+            )
+
+        im2_geo, border_mask_local = random_affine(
+            [im2_geo, border_mask], max_translation_x=0.05,
+            max_translation_y=0.05, max_rotation=10.0,
+            min_scale=0.9, max_scale=1.1
+        )
+
+        border_mask = border_mask_local * border_mask_global
+
+        im1_photo, im2_photo = random_photometric(
+            [im1_geo, im2_geo], num_layer,
+            noise_stddev=0.04, min_contrast=-0.3, max_contrast=0.3,
+            brightness_stddev=0.02, min_colour=0.9, max_colour=1.1,
+            min_gamma=0.7, max_gamma=1.5)
 
         _track_image(im1_photo, 'augmented1')
         _track_image(im2_photo, 'augmented2')
+
     else:
         im1_geo, im2_geo = im1, im2
         im1_photo, im2_photo = im1, im2
