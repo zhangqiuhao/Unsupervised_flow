@@ -46,8 +46,57 @@ def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, image_result
 
     best_model = ransac(matrix_im1, matrix_im2)
     [R, c, t] = best_model
-    #R, c, t = _ralign(matrix_im1, matrix_im2)
 
+    R_now = rotationMatrixToEulerAngles(R)[2]
+    t_x = t[0] * np.cos(old_R) - t[1] * np.sin(old_R)
+    t_y = -(t[0] * np.sin(old_R) + t[1] * np.cos(old_R))
+
+    R = old_R + R_now
+    t_rotated = [(t_x+old_t[0]).item(0), (t_y+old_t[1]).item(0)]
+
+    if matrix_input is not None:
+        delta_t_x, delta_t_y, delta_R_is = calculate_err(matrix_input, num_iters, R_now, t, file, file_err, t_x, t_y, t_rotated)
+    else:
+        mode = 'estimated'
+
+    output_flow = np.zeros([height, width, 2])
+    #Save flow without estimated self movement
+    flow_u_without=[]
+    flow_v_without=[]
+    if mode == "estimated":
+        #t_1 = t[1] * 10.0
+        t_1 = 0.0
+        t_0 = t[0] * 10.0
+        flow_u_without = (flow_u_array - t_1 + img_u * np.cos(R_now) + img_v * np.sin(R_now) - img_u) * mask_array_non_zero
+        flow_v_without = (flow_v_array - t_0 + img_u * np.sin(R_now) - img_v * np.cos(R_now) + img_v) * mask_array_non_zero
+    elif mode == 'real':
+    #Save flow without real self movement
+        t_0 = (-(delta_t_x.item(0) * np.cos(old_R) - delta_t_y.item(0) * np.sin(old_R))) * 10.0
+        t_1 = (delta_t_x.item(0) * np.sin(old_R) + delta_t_y.item(0) * np.cos(old_R)) * 10.0
+        flow_u_without = (flow_u_array - t_1 + img_u * np.cos(delta_R_is) + img_v * np.sin(delta_R_is) - img_u) * mask_array_non_zero
+        flow_v_without = (flow_v_array - t_0 + img_u * np.sin(delta_R_is) - img_v * np.cos(delta_R_is) + img_v) * mask_array_non_zero
+    else:
+        print('Should choose between real and estimated')
+
+
+    #write image and odometry
+    file.write("0 0 0 " + str(t_rotated[0]) + " 0 0 0 " + str(t_rotated[1]) + " 0 " + str(R_now) + " " + str(t[0]) + " " + str(t[1]) + "\n")
+
+    output_flow[:, :, 0] = flow_u_without.reshape((height, width))
+    output_flow[:, :, 1] = flow_v_without.reshape((height, width))
+
+    img_flow_rgb = (_convert_flow_to_rgb(output_flow) * 255.0).astype(np.uint8)
+    img_flow_rgb = Image.fromarray(img_flow_rgb)
+
+    directory = '/home/zhang/flow_without_' + mode + '_motion/'
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    img_flow_rgb.save(directory + str(num_iters) + '_output_flow.jpeg')
+
+    return R, t_rotated
+
+
+def calculate_err(matrix_input, num_iters, R_now, t, file, file_err, t_x, t_y, t_rotated):
     #read now and previous groundtruth
     matrix_gt = matrix_input.return_matrix(num_iters + 3)
     matrix_gt_pr = matrix_input.return_matrix(num_iters + 2)
@@ -62,48 +111,12 @@ def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, image_result
     delta_t_x = t_gt[2] - t_gt_pr[2]
     delta_t_y = -(t_gt[0] - t_gt_pr[0])
 
-    t_x = t[0] * np.cos(old_R) - t[1] * np.sin(old_R)
-    t_y = -(t[0] * np.sin(old_R) + t[1] * np.cos(old_R))
-
-    R_now = rotationMatrixToEulerAngles(R)[2]
-
     R_err = R_now - delta_R_is
     t_x_err = t_x - delta_t_x.item(0)
     t_y_err = t_y - delta_t_y.item(0)
 
-    R = old_R + R_now
-    t_rotated = [(t_x+old_t[0]).item(0), (t_y+old_t[1]).item(0)]
-    file.write("0 0 0 " + str(t_rotated[0]) + " 0 0 0 " + str(t_rotated[1]) + " 0 " + str(R_now) + " " + str(t[0]) + " " + str(t[1]) + "\n")
     file_err.write(str(R_err) + " " + str(t_x_err) + " " + str(t_y_err) + "\n")
-
-    output_flow = np.zeros([height, width, 2])
-    #Save flow without estimated self movement
-    if mode == "estimated":
-        t_1 = t[1] * 10.0
-        t_0 = t[0] * 10.0
-        flow_u_without = (flow_u_array - t_1 + img_u * np.cos(R_now) + img_v * np.sin(R_now) - img_u) * mask_array_non_zero
-        flow_v_without = (flow_v_array - t_0 + img_u * np.sin(R_now) - img_v * np.cos(R_now) + img_v) * mask_array_non_zero
-    elif mode == 'real':
-    #Save flow without real self movement
-        t_0 = (-(delta_t_x.item(0) * np.cos(old_R) - delta_t_y.item(0) * np.sin(old_R))) * 10.0
-        t_1 = (delta_t_x.item(0) * np.sin(old_R) + delta_t_y.item(0) * np.cos(old_R)) * 10.0
-        flow_u_without = (flow_u_array - t_1 + img_u * np.cos(delta_R_is) + img_v * np.sin(delta_R_is) - img_u) * mask_array_non_zero
-        flow_v_without = (flow_v_array - t_0 + img_u * np.sin(delta_R_is) - img_v * np.cos(delta_R_is) + img_v) * mask_array_non_zero
-    else:
-        print('Should choose between real and estimated')
-
-    output_flow[:,:,0] = flow_u_without.reshape((height, width))
-    output_flow[:,:,1] = flow_v_without.reshape((height, width))
-
-    img_flow_rgb = (_convert_flow_to_rgb(output_flow) * 255.0).astype(np.uint8)
-    img_flow_rgb = Image.fromarray(img_flow_rgb)
-
-    directory = '/home/zhang/flow_without_' + mode + '_motion/'
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-    img_flow_rgb.save(directory + str(num_iters) + '_output_flow.jpeg')
-
-    return R, t_rotated
+    return delta_t_x, delta_t_y, delta_R_is
 
 
 def _convert_flow_to_rgb(flow):

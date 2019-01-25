@@ -183,9 +183,6 @@ class Input():
                 image_1 = self._normalize_image(image_1)
                 image_2 = self._normalize_image(image_2)
 
-            print(image_1.shape)
-            print(mask_input_1.shape)
-
             return tf.train.batch(
                 [image_1, image_2, mask_input_1, mask_input_2],
                 batch_size=self.batch_size,

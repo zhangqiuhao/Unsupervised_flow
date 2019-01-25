@@ -9,7 +9,7 @@ from .util import resize_area, resize_bilinear
 from .losses import compute_losses, create_border_mask
 from ..ops import downsample
 from .image_warp import image_warp
-from .flownet import flownet, FLOW_SCALE
+from .flownet_small_deep import flownet, FLOW_SCALE     #edited
 from .PWCNet import pwcnet
 
 # REGISTER ALL POSSIBLE LOSS TERMS
@@ -20,8 +20,8 @@ def _track_loss(op, name):
     tf.add_to_collection('losses', tf.identity(op, name=name))
 
 
-def _track_image(op, name):
-    name = 'train/' + name
+def _track_image(op, category, name):
+    name = category + '/' + name
     tf.add_to_collection('train_images', tf.identity(op, name=name))
 
 
@@ -30,6 +30,7 @@ def unsupervised_loss(batch, start_iter, params, normalization=None, augment=Tru
     params.get('')
     channel_mean = tf.constant(normalization[0]) / 255.0
     im1, im2, im1_mask, im2_mask = batch
+
     im1 = im1 / 255.0
     im2 = im2 / 255.0
 
@@ -42,64 +43,45 @@ def unsupervised_loss(batch, start_iter, params, normalization=None, augment=Tru
         else:
             num_layer = num_layer + 1
 
+    _track_image(im1[..., 0:3], 'img_1', 'input_img_1')
+    _track_image(im2[..., 0:3], 'img_2', 'input_img_2')
+
     if not evaluate:
         print('Gaussblur')
         count_step = tf.Variable(start_iter, name='global_step', trainable=False, dtype=tf.int32)
-        gauss_sigma = tf.ceil(5.0 - tf.cast(count_step, dtype=tf.float32) / 20000.0)
+        gauss_sigma = tf.ceil(5.0 - tf.cast(count_step, dtype=tf.float32) / 30000.0)
         mean = tf.constant(0.0, dtype=tf.float32)
 
-        [im1, im2] = tf.cond(gauss_sigma > 0, lambda: gaussian_blur(im1, im2, gauss_sigma*4+1, mean, gauss_sigma,
-                                                                    num_layer), lambda: [im1, im2])
+        [im1, im2] = tf.cond(gauss_sigma > 0,
+                             lambda: gaussian_blur(im1, im2, gauss_sigma*4+1, mean, gauss_sigma, num_layer),
+                             lambda: gaussian_blur(im1, im2, 1.0*4+1, mean, 1.0, num_layer)
+                             )
 
     # Data & mask augmentation
     border_mask = create_border_mask(im1, 0.1)
 
     if augment:
-        '''
-        im1_geo, im2_geo, border_mask_global, im1_mask_global, im2_mask_global = random_affine(
-            [im1, im2, border_mask, im1_mask, im2_mask],
-            horizontal_flipping=True,
-            min_scale=0.9, max_scale=1.1
-            )
-
-        # augment locally
-        im2_geo, border_mask_local, im1_mask_local, im2_mask_local = random_affine(
-            [im2_geo, border_mask, im1_mask, im2_mask],
-            min_scale=0.9, max_scale=1.1
-            )
-        border_mask = border_mask_local * border_mask_global
-        im1_mask = im1_mask_global * im1_mask_local
-        im2_mask = im2_mask_global * im2_mask_local
-
-        im1_photo, im2_photo = random_photometric(
-            [im1_geo, im2_geo], num_layer,
-            noise_stddev=0.04, min_contrast=-0.3, max_contrast=0.3,
-            brightness_stddev=0.02, min_colour=0.9, max_colour=1.1,
-            min_gamma=0.7, max_gamma=1.5)
-   
-        '''
         im1_geo, im2_geo, border_mask_global = random_affine(
             [im1, im2, border_mask],
-            horizontal_flipping=True,
-            min_scale=0.9, max_scale=1.1
+            horizontal_flipping=True
             )
+
+        #self_augment = tf.random_uniform(shape=())
+        #im2_geo = tf.cond(self_augment > 0.1, lambda: im2_geo, lambda: im1_geo)
 
         im2_geo, border_mask_local = random_affine(
             [im2_geo, border_mask], max_translation_x=0.05,
-            max_translation_y=0.05, max_rotation=10.0,
-            min_scale=0.9, max_scale=1.1
+            max_translation_y=0.05, max_rotation=10.0
         )
-
         border_mask = border_mask_local * border_mask_global
 
         im1_photo, im2_photo = random_photometric(
-            [im1_geo, im2_geo], num_layer,
-            noise_stddev=0.04, min_contrast=-0.3, max_contrast=0.3,
-            brightness_stddev=0.02, min_colour=0.9, max_colour=1.1,
-            min_gamma=0.7, max_gamma=1.5)
+            [im1_geo, im2_geo], num_layer)
 
-        _track_image(im1_photo, 'augmented1')
-        _track_image(im2_photo, 'augmented2')
+        _track_image(border_mask, 'mask', 'border_mask')
+
+        _track_image(im1_photo[..., 0:3], 'img_1', 'augmented1')
+        _track_image(im2_photo[..., 0:3], 'img_2', 'augmented2')
 
     else:
         im1_geo, im2_geo = im1, im2
@@ -112,17 +94,26 @@ def unsupervised_loss(batch, start_iter, params, normalization=None, augment=Tru
     im1_photo = im1_photo - channel_mean
     im2_photo = im2_photo - channel_mean
 
-    flownet_spec = params.get('flownet', 'S')
+    network = params.get('network')
+    assert network in ['flownet', 'pwcnet']
+
     full_resolution = params.get('full_res')
-    train_all = params.get('train_all')
+    if network == 'flownet':
+        flownet_spec = params.get('flownet', 'S')
+        train_all = params.get('train_all')
 
-    flows_fw, flows_bw = flownet(im1_photo, im2_photo,
-                                 flownet_spec=flownet_spec,
-                                 full_resolution=full_resolution,
-                                 backward_flow=True,
-                                 train_all=train_all)
-
-    #flows_fw, flows_bw = pwcnet(im1_photo, im2_photo, backward_flow=True)
+        flows_fw, flows_bw = flownet(im1_photo, im2_photo, num_layer,
+                                     flownet_spec=flownet_spec,
+                                     full_resolution=full_resolution,
+                                     backward_flow=True,
+                                     train_all=train_all)
+    elif network == 'pwcnet':
+        num_conv = int(params.get('num_conv'))
+        num_concat = int(params.get('num_concat'))
+        num_dilate = int(params.get('num_dilate'))
+        opt = params.get('opt')
+        flows_fw, flows_bw = pwcnet(im1_photo, im2_photo, option=[num_conv, num_concat, num_dilate, opt],
+                                    backward_flow=True)
 
     flows_fw = flows_fw[-1]
     flows_bw = flows_bw[-1]
@@ -144,13 +135,12 @@ def unsupervised_loss(batch, start_iter, params, normalization=None, augment=Tru
         im1_s = downsample(im1_norm, 4)
         im2_s = downsample(im2_norm, 4)
         mask_s = downsample(border_mask, 4)
-        #im1_mask = downsample(im1_mask, 4)
-        #im2_mask = downsample(im2_mask, 4)
-        #im1_s = im1_s * im1_mask
-        #im2_s = im2_s * im2_mask
         final_flow_scale = FLOW_SCALE
         final_flow_fw = tf.image.resize_bilinear(flows_fw[0], im_shape) * final_flow_scale * 4
         final_flow_bw = tf.image.resize_bilinear(flows_bw[0], im_shape) * final_flow_scale * 4
+
+    _track_image(flow_to_color(final_flow_fw), 'flow', 'forward')
+    _track_image(flow_to_color(final_flow_bw), 'flow', 'backward')
 
     combined_losses = dict()
     combined_loss = 0.0
@@ -174,11 +164,17 @@ def unsupervised_loss(batch, start_iter, params, normalization=None, augment=Tru
             mask_occlusion = params.get('mask_occlusion', '')
             assert mask_occlusion in ['fb', 'disocc', '']
 
+            mask_type = params.get('mask_type', '')
+            if mask_type is '':
+                mask_type = 'binary'
+            assert mask_type in ['linear', 'binary']
+
             losses = compute_losses(im1_s, im2_s,
                                     flow_fw_s * flow_scale, flow_bw_s * flow_scale, num_layer,
                                     border_mask=mask_s if params.get('border_mask') else None,
                                     mask_occlusion=mask_occlusion,
-                                    data_max_distance=layer_patch_distances[i])
+                                    data_max_distance=layer_patch_distances[i],
+                                    mask_type=mask_type)
 
             layer_loss = 0.0
 
@@ -190,6 +186,11 @@ def unsupervised_loss(batch, start_iter, params, normalization=None, augment=Tru
                     combined_losses[loss] += layer_weight * losses[loss]
 
             combined_loss += layer_weight * layer_loss
+
+            '''if i < 1:
+                im1_s = downsample(im1_s, 2)
+                im2_s = downsample(im2_s, 2)
+                mask_s = downsample(mask_s, 2)'''
 
             im1_s = downsample(im1_s, 2)
             im2_s = downsample(im2_s, 2)

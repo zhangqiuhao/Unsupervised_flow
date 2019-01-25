@@ -20,7 +20,8 @@ def length_sq(x):
 def compute_losses(im1, im2, flow_fw, flow_bw, num_layer,
                    border_mask=None,
                    mask_occlusion='',
-                   data_max_distance=1):
+                   data_max_distance=1,
+                   mask_type=''):
     losses = {}
 
     im2_warped = image_warp(im2, flow_fw)
@@ -44,9 +45,14 @@ def compute_losses(im1, im2, flow_fw, flow_bw, num_layer,
     flow_fw_warped = image_warp(flow_fw, flow_bw)
     flow_diff_fw = flow_fw + flow_bw_warped
     flow_diff_bw = flow_bw + flow_fw_warped
-    occ_thresh =  0.01 * mag_sq + 0.5
-    fb_occ_fw = tf.cast(length_sq(flow_diff_fw) > occ_thresh, tf.float32)
-    fb_occ_bw = tf.cast(length_sq(flow_diff_bw) > occ_thresh, tf.float32)
+    occ_thresh = 0.01 * mag_sq + 0.5
+
+    if mask_type == 'linear':
+        fb_occ_fw = tf.minimum(length_sq(flow_diff_fw) / occ_thresh, 1.0)
+        fb_occ_bw = tf.minimum(length_sq(flow_diff_bw) / occ_thresh, 1.0)
+    elif mask_type == 'binary':
+        fb_occ_fw = tf.cast(length_sq(flow_diff_fw) > occ_thresh, tf.float32)
+        fb_occ_bw = tf.cast(length_sq(flow_diff_bw) > occ_thresh, tf.float32)
 
     if mask_occlusion == 'fb':
         mask_fw *= (1 - fb_occ_fw)

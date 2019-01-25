@@ -39,9 +39,9 @@ def eval_err():
 
     table = plt.subplot(414)
 
-    data = [[round(np.max(angle_err[0, :]), 5), round(np.min(angle_err[0, :]), 5), round(np.sum(angle_err[0, :]) / count, 5)],
-            [round(np.max(t_x_err[0, :]), 5), round(np.min(t_x_err[0, :]), 5), round(np.sum(t_x_err[0, :]) / count, 5)],
-            [round(np.max(t_y_err[0, :]), 5), round(np.min(t_y_err[0, :]), 5), round(np.sum(t_y_err[0, :]) / count, 5)]]
+    data = [[round(np.max(angle_err[0, :]), 5), round(np.min(angle_err[0, :]), 5), round(np.sum(np.abs(angle_err[0, :])) / count, 5)],
+            [round(np.max(t_x_err[0, :]), 5), round(np.min(t_x_err[0, :]), 5), round(np.sum(np.abs(t_x_err[0, :])) / count, 5)],
+            [round(np.max(t_y_err[0, :]), 5), round(np.min(t_y_err[0, :]), 5), round(np.sum(np.abs(t_y_err[0, :])) / count, 5)]]
     columns = ('Max_err', 'Min_err', 'Avg_err')
     rows = ['Angle', 'X Axis', 'Y Axis']
 

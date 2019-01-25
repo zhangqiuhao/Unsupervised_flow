@@ -10,7 +10,7 @@ from e2eflow.util import convert_input_strings
 
 from e2eflow.kitti.input import KITTIInput
 from e2eflow.kitti.data import KITTIData
-
+from gputil.monitor import Monitor
 
 tf.app.flags.DEFINE_string('ex', 'default',
                            'Name of the experiment.'
@@ -31,7 +31,9 @@ def main(argv=None):
     dirs = experiment.config['dirs']
     run_config = experiment.config['run']
 
-    gpu_list_param = run_config['gpu_list']
+    gpu_list_param = Monitor(10)
+
+    #gpu_list_param = run_config['gpu_list']
 
     if isinstance(gpu_list_param, int):
         gpu_list = [gpu_list_param]

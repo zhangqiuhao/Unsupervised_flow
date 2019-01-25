@@ -54,7 +54,7 @@ def flownet(im1, im2, layer, flownet_spec='S', full_resolution=False, train_all=
                             diff = tf.stop_gradient(diff)
 
                         inputs = tf.concat([im1, im2, flow, warp, diff], axis=3)
-                        inputs = tf.reshape(inputs, [num_batch, height, width, layer * 4 + 2])
+                        #inputs = tf.reshape(inputs, [num_batch, height, width, layer * 4 + 2])
                     else:
                         inputs = tf.concat([im1, im2], 3)
                     return flownet_s(inputs,
@@ -90,43 +90,61 @@ def _flownet_upconv(conv6_1, conv5_1, conv4_1, conv3_1, conv2, conv1=None, input
                     channel_mult=1, full_res=False, channels=2):
     m = channel_mult
 
-    flow6 = slim.conv2d(conv6_1, channels, 3, scope='flow6',
-                        activation_fn=None)
-    deconv5 = slim.conv2d_transpose(conv6_1, int(512 * m), 4, stride=2,
-                                   scope='deconv5')
-    flow6_up5 = slim.conv2d_transpose(flow6, channels, 4, stride=2,
-                                     scope='flow6_up5',
-                                     activation_fn=None)
+    x = tf.concat([slim.conv2d(conv6_1, 128, kernel_size=3, scope='corr6_1', stride=1), conv6_1], 1)
+    x = tf.concat([slim.conv2d(x, 128, kernel_size=3, scope='corr6_2', stride=1), x], 1)
+    x = tf.concat([slim.conv2d(x, 96, kernel_size=3, scope='corr6_3', stride=1), x], 1)
+    x = tf.concat([slim.conv2d(x, 64, kernel_size=3, scope='corr6_4', stride=1), x], 1)
+    x = tf.concat([slim.conv2d(x, 32, kernel_size=3, scope='corr6_5', stride=1), x], 1)
+
+    flow6 = slim.conv2d(x, channels, 3, scope='flow6', activation_fn=None)
+
+    deconv5 = slim.conv2d_transpose(conv6_1, int(192 * m), 4, stride=2, scope='deconv5')
+    flow6_up5 = slim.conv2d_transpose(flow6, channels, 4, stride=2, scope='flow6_up5', activation_fn=None)
     concat5 = tf.concat([conv5_1, deconv5, flow6_up5], 1)
-    flow5 = slim.conv2d(concat5, channels, 3, scope='flow5',
-                       activation_fn=None)
 
-    deconv4 = slim.conv2d_transpose(concat5, int(256 * m), 4, stride=2,
-                                   scope='deconv4')
-    flow5_up4 = slim.conv2d_transpose(flow5, channels, 4, stride=2,
-                                     scope='flow5_up4',
-                                     activation_fn=None)
+    x = tf.concat([slim.conv2d(concat5, 128, kernel_size=3, scope='corr5_1', stride=1), concat5], 1)
+    x = tf.concat([slim.conv2d(x, 128, kernel_size=3, scope='corr5_2', stride=1), x], 1)
+    x = tf.concat([slim.conv2d(x, 96, kernel_size=3, scope='corr5_3', stride=1), x], 1)
+    x = tf.concat([slim.conv2d(x, 64, kernel_size=3, scope='corr5_4', stride=1), x], 1)
+    x = tf.concat([slim.conv2d(x, 32, kernel_size=3, scope='corr5_5', stride=1), x], 1)
+
+    flow5 = slim.conv2d(x, channels, 3, scope='flow5', activation_fn=None)
+
+    deconv4 = slim.conv2d_transpose(concat5, int(128 * m), 4, stride=2, scope='deconv4')
+    flow5_up4 = slim.conv2d_transpose(flow5, channels, 4, stride=2, scope='flow5_up4', activation_fn=None)
     concat4 = tf.concat([conv4_1, deconv4, flow5_up4], 1)
-    flow4 = slim.conv2d(concat4, channels, 3, scope='flow4',
-                       activation_fn=None)
 
-    deconv3 = slim.conv2d_transpose(concat4, int(128 * m), 4, stride=2,
-                                   scope='deconv3')
-    flow4_up3 = slim.conv2d_transpose(flow4, channels, 4, stride=2,
-                                     scope='flow4_up3',
-                                     activation_fn=None)
+    x = tf.concat([slim.conv2d(concat4, 128, kernel_size=3, scope='corr4_1', stride=1), concat4], 1)
+    x = tf.concat([slim.conv2d(x, 128, kernel_size=3, scope='corr4_2', stride=1), x], 1)
+    x = tf.concat([slim.conv2d(x, 96, kernel_size=3, scope='corr4_3', stride=1), x], 1)
+    x = tf.concat([slim.conv2d(x, 64, kernel_size=3, scope='corr4_4', stride=1), x], 1)
+    x = tf.concat([slim.conv2d(x, 32, kernel_size=3, scope='corr4_5', stride=1), x], 1)
+
+    flow4 = slim.conv2d(x, channels, 3, scope='flow4', activation_fn=None)
+
+    deconv3 = slim.conv2d_transpose(concat4, int(96 * m), 4, stride=2, scope='deconv3')
+    flow4_up3 = slim.conv2d_transpose(flow4, channels, 4, stride=2, scope='flow4_up3', activation_fn=None)
     concat3 = tf.concat([conv3_1, deconv3, flow4_up3], 1)
-    flow3 = slim.conv2d(concat3, channels, 3, scope='flow3',
-                       activation_fn=None)
 
-    deconv2 = slim.conv2d_transpose(concat3, int(64 * m), 4, stride=2,
-                                   scope='deconv2')
-    flow3_up2 = slim.conv2d_transpose(flow3, channels, 4, stride=2,
-                                     scope='flow3_up2',
-                                     activation_fn=None)
+    x = tf.concat([slim.conv2d(concat3, 128, kernel_size=3, scope='corr3_1', stride=1), concat3], 1)
+    x = tf.concat([slim.conv2d(x, 128, kernel_size=3, scope='corr3_2', stride=1), x], 1)
+    x = tf.concat([slim.conv2d(x, 96, kernel_size=3, scope='corr3_3', stride=1), x], 1)
+    x = tf.concat([slim.conv2d(x, 64, kernel_size=3, scope='corr3_4', stride=1), x], 1)
+    x = tf.concat([slim.conv2d(x, 32, kernel_size=3, scope='corr3_5', stride=1), x], 1)
+
+    flow3 = slim.conv2d(x, channels, 3, scope='flow3', activation_fn=None)
+
+    deconv2 = slim.conv2d_transpose(concat3, int(64 * m), 4, stride=2, scope='deconv2')
+    flow3_up2 = slim.conv2d_transpose(flow3, channels, 4, stride=2, scope='flow3_up2', activation_fn=None)
     concat2 = tf.concat([conv2, deconv2, flow3_up2], 1)
-    flow2 = slim.conv2d(concat2, channels, 3, scope='flow2',
-                       activation_fn=None)
+
+    x = tf.concat([slim.conv2d(concat2, 128, kernel_size=3, scope='corr2_1', stride=1), concat2], 1)
+    x = tf.concat([slim.conv2d(x, 128, kernel_size=3, scope='corr2_2', stride=1), x], 1)
+    x = tf.concat([slim.conv2d(x, 96, kernel_size=3, scope='corr2_3', stride=1), x], 1)
+    x = tf.concat([slim.conv2d(x, 64, kernel_size=3, scope='corr2_4', stride=1), x], 1)
+    x = tf.concat([slim.conv2d(x, 32, kernel_size=3, scope='corr2_5', stride=1), x], 1)
+
+    flow2 = slim.conv2d(x, channels, 3, scope='flow2', activation_fn=None)
 
     flows = [flow2, flow3, flow4, flow5, flow6]
 
@@ -200,10 +218,19 @@ def flownet_c_features(im, channel_mult=1, reuse=None):
                         weights_regularizer=slim.l2_regularizer(0.0004),
                         weights_initializer=layers.variance_scaling_initializer(),
                         activation_fn=_leaky_relu):
-        conv1 = slim.conv2d(im, int(64 * m), 7, stride=2, scope='conv1', reuse=reuse)
-        conv2 = slim.conv2d(conv1, int(128 * m), 5, stride=2, scope='conv2', reuse=reuse)
-        conv3 = slim.conv2d(conv2, int(256 * m), 5, stride=2, scope='conv3', reuse=reuse)
-        return conv1, conv2, conv3
+
+        conv1 = slim.conv2d(im, 16, kernel_size=3, stride=2, scope='conv1', reuse=reuse)
+        conv1_1 = slim.conv2d(conv1, 16, kernel_size=3, stride=1, scope='conv1_1', reuse=reuse)
+        conv1_2 = slim.conv2d(conv1_1, 16, kernel_size=3, stride=1, scope='conv1_2', reuse=reuse)
+
+        conv2 = slim.conv2d(conv1_2, 32, kernel_size=3, stride=2, scope='conv2', reuse=reuse)
+        conv2_1 = slim.conv2d(conv2, 32, kernel_size=3, stride=1, scope='conv2_1', reuse=reuse)
+        conv2_2 = slim.conv2d(conv2_1, 32, kernel_size=3, stride=1, scope='conv2_2', reuse=reuse)
+
+        conv3 = slim.conv2d(conv2_2, 64, kernel_size=3, stride=2, scope='conv3', reuse=reuse)
+        conv3_1 = slim.conv2d(conv3, 64, kernel_size=3, stride=1, scope='conv3_1', reuse=reuse)
+        conv3_2 = slim.conv2d(conv3_1, 64, kernel_size=3, stride=1, scope='conv3_2', reuse=reuse)
+        return conv1_2, conv2_2, conv3_2
 
 
 def flownet_c(conv3_a, conv3_b, conv2_a, channel_mult=1, full_res=False):
@@ -223,15 +250,21 @@ def flownet_c(conv3_a, conv3_b, conv2_a, channel_mult=1, full_res=False):
 
         conv_redir = slim.conv2d(conv3_a, int(32 * m), 1, stride=1, scope='conv_redir')
 
-        conv3_1 = slim.conv2d(tf.concat([conv_redir, corr], 1), int(256 * m), 3,
+        conv3_c = slim.conv2d(tf.concat([conv_redir, corr], 1), int(256 * m), 3,
                               stride=1, scope='conv3_1')
-        conv4 = slim.conv2d(conv3_1, int(512 * m), 3, stride=2, scope='conv4')
-        conv4_1 = slim.conv2d(conv4, int(512 * m), 3, stride=1, scope='conv4_1')
-        conv5 = slim.conv2d(conv4_1, int(512 * m), 3, stride=2, scope='conv5')
-        conv5_1 = slim.conv2d(conv5, int(512 * m), 3, stride=1, scope='conv5_1')
-        conv6 = slim.conv2d(conv5_1, int(1024 * m), 3, stride=2, scope='conv6')
-        conv6_1 = slim.conv2d(conv6, int(1024 * m), 3, stride=1, scope='conv6_1')
 
-        res = _flownet_upconv(conv6_1, conv5_1, conv4_1, conv3_1, conv2_a,
+        conv4 = slim.conv2d(conv3_c, int(96 * m), 3, stride=2, scope='conv4')
+        conv4_1 = slim.conv2d(conv4, int(96 * m), 3, stride=1, scope='conv4_1')
+        conv4_2 = slim.conv2d(conv4_1, int(96 * m), 3, stride=1, scope='conv4_2')
+
+        conv5 = slim.conv2d(conv4_1, int(128 * m), 3, stride=2, scope='conv5')
+        conv5_1 = slim.conv2d(conv5, int(128 * m), 3, stride=1, scope='conv5_1')
+        conv5_2 = slim.conv2d(conv5_1, int(128 * m), 3, stride=1, scope='conv5_2')
+
+        conv6 = slim.conv2d(conv5_1, int(196 * m), 3, stride=2, scope='conv6')
+        conv6_1 = slim.conv2d(conv6, int(196 * m), 3, stride=1, scope='conv6_1')
+        conv6_2 = slim.conv2d(conv6_1, int(196 * m), 3, stride=1, scope='conv6_2')
+
+        res = _flownet_upconv(conv6_2, conv5_2, conv4_2, conv3_c, conv2_a,
                               channel_mult=channel_mult, full_res=full_res)
         return nchw_to_nhwc(res)

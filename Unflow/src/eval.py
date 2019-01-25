@@ -119,7 +119,8 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
         raise RuntimeError("Error: experiment must contain a checkpoint")
     ckpt_path = exp_dir + "/" + os.path.basename(ckpt.model_checkpoint_path)
 
-    print(ckpt_path)
+    checkpoint = int(os.path.basename(ckpt.model_checkpoint_path).split('-')[1])
+    print(checkpoint)
 
     with tf.Graph().as_default(): #, tf.device('gpu:' + FLAGS.gpu):
         inputs = input_fn()
@@ -130,9 +131,9 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
         im2 = resize_input(im2, height, width, layers, resized_h, resized_w) # TODO adapt train.py
 
         _, flow, flow_bw, im1 = unsupervised_loss(
-            (im1, im2, mask_image_1, mask_image_2), 80001,
+            (im1, im2, mask_image_1, mask_image_2), checkpoint,
             normalization=data_input.get_normalization(),
-            params=params, augment=False, return_flow=True, evaluate=False)
+            params=params, augment=False, return_flow=True)
 
         im1 = resize_output(im1, height, width, layers)
         im2 = resize_output(im2, height, width, layers)
@@ -172,13 +173,18 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
             sess.run(tf.global_variables_initializer())
             sess.run(tf.local_variables_initializer())
 
-            R = rotationMatrixToEulerAngles(matrix_input.return_matrix(2)[:, 0:3])[2]
-            t = matrix_input.return_matrix(2)[:, 3]
+            if matrix_input is not None:
+                R = rotationMatrixToEulerAngles(matrix_input.return_matrix(2)[:, 0:3])[2]
+                t = matrix_input.return_matrix(2)[:, 3]
+                file_err = open("/home/zhang/odo_err.txt", "w")
+            else:
+                R = 0.0
+                t = [0.0, 0.0]
+                file_err = None
+
             file = open("/home/zhang/odo.txt", "w")
-            file_err = open("/home/zhang/odo_err.txt", "w")
 
             restore_networks(sess, params, ckpt, ckpt_path)
-
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(sess=sess,
                                                    coord=coord)
@@ -189,6 +195,7 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
             try:
                 num_iters = 0
                 while not coord.should_stop() and (max_iter is None or num_iters != max_iter):
+                    start_sess = timeit.default_timer()
                     all_results = sess.run([flow, flow_bw, flow_fw_int16, flow_bw_int16] + all_ops)
                     all_results = all_results[4:]
                     image_results = all_results[:num_ims]
@@ -197,21 +204,28 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
                     if FLAGS.output_visual:
                         path_flow = os.path.join(exp_out_dir, iterstr + '_flow.png')
                         im1 = image_results[0]*255
+                        mask = image_results[1] > 0.001
+                        #im1 = np.multiply(im1, mask)
+                        #im1[np.where((im1 == [0, 0, 0]).all(axis=-1))] = [255, 255, 255]
                         write_rgb_png(im1, path_flow)
                     if num_iters < FLAGS.num_vis:
                         image_lists.append(image_results)
                     if num_iters > 0:
                         sys.stdout.write('\r')
 
-                    start = timeit.default_timer()
+                    start_est = timeit.default_timer()
                     R, t = evaluate(file, file_err, R, t,  matrix_input, num_iters, image_results[1:5], FLAGS.mode)
-                    stop = timeit.default_timer()
-                    print('Time: ', stop - start)
+                    stop_est = timeit.default_timer()
 
                     num_iters += 1
                     sys.stdout.write("-- evaluating '{}': {}/{}"
                                      .format(name, num_iters, max_iter))
                     sys.stdout.flush()
+                    stop_sess = timeit.default_timer()
+
+                    print()
+                    print('Motion Estimation Time: ', stop_est - start_est)
+                    print('Flow Estimation Time per Image: ', stop_sess - start_sess)
                     print()
             except tf.errors.OutOfRangeError:
                 pass
@@ -219,6 +233,7 @@ def _evaluate_experiment(name, input_fn, data_input, matrix_input, layers):
             file.close()
             coord.request_stop()
             coord.join(threads)
+
 
 def main(argv=None):
     os.environ['CUDA_VISIBLE_DEVICES'] = FLAGS.gpu
@@ -247,8 +262,12 @@ def main(argv=None):
     print(mask_layers)
 
     # Input odometry data
-    matrix_dir = dirs['odo_dirs'] + FLAGS.eval_txt + '.txt'
-    matrix_input = Matrix(dir=matrix_dir)
+    try:
+        matrix_dir = dirs['odo_dirs'] + FLAGS.eval_txt + '.txt'
+        matrix_input = Matrix(dir=matrix_dir)
+        matrix_input.return_matrix(0)
+    except FileNotFoundError:
+        matrix_input = None
 
     data = KITTIData(dirs['data'], development=True)
     data_input = KITTIInput(data, str(FLAGS.eval_txt), batch_size=1, normalize=False,
@@ -258,8 +277,10 @@ def main(argv=None):
     for name in FLAGS.ex.split(','):
         _evaluate_experiment(name, input_fn, data_input, matrix_input, num_layers)
 
+    if matrix_input is not None:
+        eval_err()
+
     KittiPlotTrajectories(FLAGS.eval_txt, FLAGS.num)
-    eval_err()
 
 
 if __name__ == '__main__':
