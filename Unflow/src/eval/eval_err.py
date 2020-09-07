@@ -1,8 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-def eval_err():
-    inpath_ff_err = '/home/zhang/odo_err.txt'
+
+def eval_err(sequence, odo_save_path):
+    inpath_ff_err = odo_save_path + "/" + sequence + "_err.txt"
     angle_err = []
     t_x_err = []
     t_y_err = []
@@ -56,4 +57,4 @@ def eval_err():
 
     plt.subplots_adjust(left=0.2, bottom=0.1, hspace=0.1)
     plt.tight_layout(pad=1.0, w_pad=0.0, h_pad=0.0)
-    plt.savefig('/home/zhang/odo_err.png')
+    plt.savefig(odo_save_path + "/odo_" + sequence + "_err.png")

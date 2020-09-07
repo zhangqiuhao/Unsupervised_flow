@@ -7,9 +7,9 @@ import tensorflow as tf
 from .augment import random_crop
 
 
-def resize_input(t, height, width, resized_h, resized_w):
+def resize_input(t, height, width, layers, resized_h, resized_w):
     # Undo old resizing and apply bilinear
-    t = tf.reshape(t, [resized_h, resized_w, 3])
+    t = tf.reshape(t, [resized_h, resized_w, layers])
     t = tf.expand_dims(tf.image.resize_image_with_crop_or_pad(t, height, width), 0)
     return tf.image.resize_bilinear(t, [resized_h, resized_w])
 
@@ -150,41 +150,24 @@ class Input():
         filenames_2 = list(filenames_2)
 
         with tf.variable_scope('train_inputs'):
-            input_1, mask_input_1 = read_png_image(filenames_1, self.layers, self.mask_layers, 1)
-            input_2, mask_input_2 = read_png_image(filenames_2, self.layers, self.mask_layers, 1)
+            input_1 = read_png_image(filenames_1, self.layers, self.mask_layers, 1)
+            input_2 = read_png_image(filenames_2, self.layers, self.mask_layers, 1)
 
             image_1 = tf.concat([x for x in input_1], axis=-1)
             image_2 = tf.concat([x for x in input_2], axis=-1)
 
-            if mask_input_1 is None or mask_input_2 is None:
-                mask_input_1 = tf.ones([height, width, 1], tf.float32)
-                mask_input_2 = tf.ones([height, width, 1], tf.float32)
-                mask_layers_length = 1
-            else:
-                mask_layers_length = len(self.mask_layers)
-
             if needs_crop:
-                image_mask_1 = tf.concat([image_1, mask_input_1], axis=-1)
-                image_mask_2 = tf.concat([image_2, mask_input_2], axis=-1)
-                image_mask_1, image_mask_2 = random_crop([image_mask_1, image_mask_2],
-                                                         [height, width, self.num_layers + mask_layers_length])
-
-                image_1 = image_mask_1[:, :, 0:self.num_layers]
-                image_2 = image_mask_2[:, :, 0:self.num_layers]
-                mask_input_1 = image_mask_1[:, :, self.num_layers:self.num_layers+mask_layers_length]
-                mask_input_2 = image_mask_2[:, :, self.num_layers:self.num_layers+mask_layers_length]
+                image_1, image_2 = random_crop([image_1, image_2], [height, width, self.num_layers])
             else:
                 image_1 = tf.reshape(image_1, [height, width, self.num_layers])
                 image_2 = tf.reshape(image_2, [height, width, self.num_layers])
-                mask_input_1 = tf.reshape(mask_input_1, [height, width, self.num_layers])
-                mask_input_2 = tf.reshape(mask_input_2, [height, width, self.num_layers])
 
             if self.normalize:
                 image_1 = self._normalize_image(image_1)
                 image_2 = self._normalize_image(image_2)
 
             return tf.train.batch(
-                [image_1, image_2, mask_input_1, mask_input_2],
+                [image_1, image_2],
                 batch_size=self.batch_size,
                 num_threads=self.num_threads)
 
@@ -206,19 +189,4 @@ def read_png_image(filenames, layers, mask_layers, num_epochs=None):
                 image_uint8 = tf.image.decode_png(value, channels=1)
             image_float32 = tf.cast(image_uint8, tf.float32)
             image.append(image_float32)
-    if mask_layers is not None:
-        layer = '_' + mask_layers[0] + '.png'
-        filenames_with_layer = [i + layer for i in filenames]
-        filename_queue = tf.train.string_input_producer(filenames_with_layer,
-                                                        shuffle=False, capacity=len(filenames_with_layer))
-        _, value = reader.read(filename_queue)
-        image_uint8 = tf.image.decode_png(value, channels=1)
-        mask_image_float32 = tf.cast(image_uint8, tf.float32)
-
-        if mask_layers == 'z_max_occlusions_cartesian':
-            mask_image_float32 = 1.0 - mask_image_float32 / 255.0
-        if mask_layers == 'observations_cartesian':
-            mask_image_float32 = mask_image_float32 / 255.0
-    else:
-        mask_image_float32 = None
-    return image, mask_image_float32
+    return image

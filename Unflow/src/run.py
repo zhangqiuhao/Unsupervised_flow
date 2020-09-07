@@ -61,12 +61,19 @@ def main(argv=None):
         else:
             num_layers = num_layers + 1
     print(layers)
-    print(mask_layers)
 
     kdata = KITTIData(data_dir=dirs['data'],
                       fast_dir=dirs.get('fast'),
                       stat_log_dir=None,
                       development=run_config['development'])
+
+    einput = KITTIInput(data=kdata,
+                        batch_size=1,
+                        normalize=False,
+                        dims=(kconfig['height'], kconfig['width']),
+                        layers=layers,
+                        num_layers=num_layers,
+                        mask_layers=mask_layers)
 
     if train_dataset == 'kitti':
         kinput = KITTIInput(data=kdata,
@@ -81,9 +88,11 @@ def main(argv=None):
               lambda shift: kinput.input_raw(swap_images=False,
                                              center_crop=True,
                                              shift=shift * run_config['batch_size']),
+              lambda: einput.input_validation(),
               params=kconfig,
               normalization=kinput.get_normalization(),
               train_summaries_dir=experiment.train_dir,
+              eval_summaries_dir=experiment.eval_dir,
               experiment=FLAGS.ex,
               ckpt_dir=experiment.save_dir,
               debug=FLAGS.debug,
@@ -92,7 +101,7 @@ def main(argv=None):
         tr.run(0, kiters)
 
     else:
-      raise ValueError(
+        raise ValueError(
           "Invalid dataset. Dataset must be "
           "{kitti}")
 

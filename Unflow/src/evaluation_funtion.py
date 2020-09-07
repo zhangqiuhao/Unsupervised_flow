@@ -64,8 +64,7 @@ def evaluate(file, file_err, old_R, old_t, matrix_input, num_iters, image_result
     flow_u_without=[]
     flow_v_without=[]
     if mode == "estimated":
-        #t_1 = t[1] * 10.0
-        t_1 = 0.0
+        t_1 = t[1] * 10.0
         t_0 = t[0] * 10.0
         flow_u_without = (flow_u_array - t_1 + img_u * np.cos(R_now) + img_v * np.sin(R_now) - img_u) * mask_array_non_zero
         flow_v_without = (flow_v_array - t_0 + img_u * np.sin(R_now) - img_v * np.cos(R_now) + img_v) * mask_array_non_zero

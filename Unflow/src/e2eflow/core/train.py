@@ -27,22 +27,28 @@ def restore_networks(sess, params, ckpt, ckpt_path=None):
     flownet_num = len(spec)
 
     network = params.get('network')
-    assert network in ['flownet', 'pwcnet']
 
-    if network == 'flownet':
+    if network == 'pwcnet':
+        net_names = ['pwcnet'] #pwc for sm1 and pwcnet
+    else:
         net_names = ['flownet_c'] + ['stack_{}_flownet'.format(i+1) for i in range(flownet_num - 1)]
-    elif network == 'pwcnet':
-        net_names = ['pwcnet']
+
     assert len(finetune) <= flownet_num
     # Save all trained networks, restore all networks which are kept fixed
     if train_all:
         restore_external_nets = finetune if ckpt is None else []
-        variables_to_save = slim.get_variables_to_restore(include=net_names)
+        networks = net_names + ['trainable_weights']
+        if params.get('motion_weight'):
+            networks += ['mask_network']
+        variables_to_save = slim.get_variables_to_restore(include=networks)
     else:
         restore_external_nets = finetune if ckpt is None else finetune[:flownet_num - 1]
-        variables_to_save = slim.get_variables_to_restore(include=[net_names[-1]])
+        networks = [net_names[-1]] + ['trainable_weights']
+        if params.get('motion_weight'):
+            networks += ['mask_network']
+        variables_to_save = slim.get_variables_to_restore(include=networks)
 
-    saver = tf.train.Saver(variables_to_save, max_to_keep=1000)
+    saver = tf.train.Saver(variables_to_save, max_to_keep=15)
 
     sess.run(tf.global_variables_initializer())
 
@@ -104,16 +110,18 @@ def _eval_plot(results, image_names, title):
 
 
 class Trainer():
-    def __init__(self, train_batch_fn, params,
-                 train_summaries_dir, ckpt_dir,
+    def __init__(self, train_batch_fn, eval_batch_fn, params,
+                 train_summaries_dir, eval_summaries_dir, ckpt_dir,
                  normalization, debug=False, experiment="", interactive_plot=False,
                  supervised=False, devices=None):
 
         self.train_summaries_dir = train_summaries_dir
+        self.eval_summaries_dir = eval_summaries_dir
         self.ckpt_dir = ckpt_dir
         self.params = params
         self.debug = debug
         self.train_batch_fn = train_batch_fn
+        self.eval_batch_fn = eval_batch_fn
         self.normalization = normalization
         self.experiment = experiment
         self.interactive_plot = interactive_plot
@@ -149,6 +157,7 @@ class Trainer():
         assert (max_iter - start_iter + 1) % save_interval == 0
         for i in range(start_iter, max_iter + 1, save_interval):
             self.train(i, i + save_interval - 1, i - (min_iter + 1))
+            self.eval(1)
 
         if self.plot_proc:
             self.plot_proc.join()
@@ -279,58 +288,36 @@ class Trainer():
 
         with tf.Graph().as_default():
             inputs = self.eval_batch_fn()
-            im1, im2, mask_image_1, mask_image_2, input_shape = inputs[:3]
-            truths = inputs[3:]
+            im1, im2, input_shape = inputs[:3]
 
-            height, width, _ = tf.unstack(tf.squeeze(input_shape), num=3, axis=0)
-            im1 = resize_input(im1, height, width, 384, 1280)
-            im2 = resize_input(im2, height, width, 384, 1280)
+            height, width, channels = tf.unstack(tf.squeeze(input_shape), num=3, axis=0)
+            resized_h = self.params.get('height')
+            resized_w = self.params.get('width')
+            im1 = resize_input(im1, height, width, channels, resized_h, resized_w)
+            im2 = resize_input(im2, height, width, channels, resized_h, resized_w)
 
-            _, flow, flow_bw = unsupervised_loss(
-                (im1, im2),
-                params=self.params,
+            # Correct path for ckpts from different machine
+            # ckpt_path = self.ckpt_dir + "/" + os.path.basename(ckpt.model_checkpoint_path)
+            ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
+            assert ckpt is not None, "No checkpoints to evaluate"
+            ckpt_path = ckpt.model_checkpoint_path
+            global_step = ckpt_path.split('/')[-1].split('-')[-1]
+
+            loss, flow, flow_bw, _ = unsupervised_loss(
+                (im1, im2), int(global_step),
                 normalization=self.normalization,
-                augment=False, return_flow=True)
-
-            im1 = resize_output(im1, height, width, 3)
-            im2 = resize_output(im2, height, width, 3)
-            flow = resize_output_flow(flow, height, width, 2)
-            flow_bw = resize_output_flow(flow_bw, height, width, 2)
-
-            variables_to_restore = tf.all_variables()
-
-            images_ = [image_warp(im1, flow) / 255,
-                       flow_to_color(flow),
-                       1 - (1 - occlusion(flow, flow_bw)[0]) * create_outgoing_mask(flow) ,
-                       forward_warp(flow_bw) < DISOCC_THRESH]
-            image_names = ['warped image', 'flow', 'occ', 'reverse disocc']
+                params=self.params, augment=False, return_flow=True)
+            variables_to_restore = tf.global_variables()
 
             values_ = []
+            images_ = []
             averages_ = []
-            truth_tuples = []
-            if len(truths) == 4:
-                flow_occ, mask_occ, flow_noc, mask_noc = truths
-                flow_occ = resize_output_crop(flow_occ, height, width, 2)
-                flow_noc = resize_output_crop(flow_noc, height, width, 2)
-                mask_occ = resize_output_crop(mask_occ, height, width, 1)
-                mask_noc = resize_output_crop(mask_noc, height, width, 1)
 
-                truth_tuples.append(('occluded', flow_occ, mask_occ))
-                truth_tuples.append(('non-occluded', flow_noc, mask_noc))
-                images_ += [flow_error_image(flow, flow_occ, mask_occ, mask_noc)]
-                image_names += ['flow error']
-            else:
-                raise NotImplementedError()
-                truth_tuples.append(('flow', truths[0], truths[1]))
-
-            for name, gt_flow, mask in truth_tuples:
-                error_ = flow_error_avg(gt_flow, flow, mask)
-                error_avg_ = summarized_placeholder('AEE/' + name, key='eval_avg')
-                outliers_ = outlier_pct(gt_flow, flow, mask)
-                outliers_avg = summarized_placeholder('outliers/' + name,
-                                                      key='eval_avg')
-                values_.extend([error_, outliers_])
-                averages_.extend([error_avg_, outliers_avg])
+            images = tf.get_collection('train_images')
+            for im in images:
+                images_.append(im)
+                tensor_name = re.sub('tower_[0-9]*/', '', im.op.name)
+                tf.summary.image(tensor_name, im)
 
             losses = tf.get_collection('losses')
             for l in losses:
@@ -338,42 +325,27 @@ class Trainer():
                 tensor_name = re.sub('tower_[0-9]*/', '', l.op.name)
                 loss_avg_ = summarized_placeholder(tensor_name, key='eval_avg')
                 averages_.append(loss_avg_)
-
-            ckpt = tf.train.get_checkpoint_state(self.ckpt_dir)
-            assert ckpt is not None, "No checkpoints to evaluate"
-
-            # Correct path for ckpts from different machine
-            # ckpt_path = self.ckpt_dir + "/" + os.path.basename(ckpt.model_checkpoint_path)
-            ckpt_path = ckpt.model_checkpoint_path
-
             with tf.Session() as sess:
                 summary_writer = tf.summary.FileWriter(self.eval_summaries_dir)
                 saver = tf.train.Saver(variables_to_restore)
 
                 sess.run(tf.global_variables_initializer())
                 sess.run(tf.local_variables_initializer())
-
                 restore_networks(sess, self.params, ckpt)
-                global_step = ckpt_path.split('/')[-1].split('-')[-1]
-
                 coord = tf.train.Coordinator()
                 threads = tf.train.start_queue_runners(sess=sess,
                                                        coord=coord)
                 averages = np.zeros(len(averages_))
                 num_iters = 0
-
-                image_lists = []
                 try:
-                    while not coord.should_stop():
+                    while not coord.should_stop() and num_iters < 16:
                         results = sess.run(values_ + images_)
                         values = results[:len(averages_)]
-                        images = results[len(averages_):]
-                        image_lists.append(images)
+                        image_result = results[len(averages_):]
                         averages += values
                         num_iters += 1
                 except tf.errors.OutOfRangeError:
                     pass
-
                 averages /= num_iters
                 feed = {k: v for (k, v) in zip(averages_, averages)}
 
@@ -386,15 +358,6 @@ class Trainer():
                 coord.request_stop()
                 coord.join(threads)
                 summary_writer.close()
-
-                if self.interactive_plot:
-                    if self.plot_proc:
-                        self.plot_proc.terminate()
-                    self.plot_proc = Process(target=_eval_plot,
-                                             args=([image_lists], image_names,
-                                                   "{} (i={})".format(self.experiment,
-                                                                      global_step)))
-                    self.plot_proc.start()
 
 
 def average_gradients(tower_grads):

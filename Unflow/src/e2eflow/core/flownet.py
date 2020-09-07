@@ -28,19 +28,19 @@ def flownet(im1, im2, layer, flownet_spec='S', full_resolution=False, train_all=
                 assert i == 0, 'FlowNetS must be used for refinement networks'
 
                 with tf.variable_scope('flownet_c_features'):
-                    _, conv2_a, conv3_a = flownet_c_features(im1, channel_mult=channel_mult)
-                    _, conv2_b, conv3_b = flownet_c_features(im2, channel_mult=channel_mult, reuse=True)
+                    conv1_a, conv2_a, conv3_a = flownet_c_features(im1, channel_mult=channel_mult)
+                    conv1_b, conv2_b, conv3_b = flownet_c_features(im2, channel_mult=channel_mult, reuse=True)
 
                 with tf.variable_scope('flownet_c') as scope:
                     flow_fw = flownet_c(conv3_a, conv3_b, conv2_a,
                                         full_res=full_res,
-                                        channel_mult=channel_mult)
+                                        channel_mult=channel_mult, conv1_a=conv1_a, input_a=im1)
                     flows_fw.append(flow_fw)
                     if backward_flow:
                         scope.reuse_variables()
                         flow_bw = flownet_c(conv3_b, conv3_a, conv2_b,
                                             full_res=full_res,
-                                            channel_mult=channel_mult)
+                                            channel_mult=channel_mult, conv1_a=conv1_b, input_a=im2)
                         flows_bw.append(flow_bw)
             elif name.lower() == 's':
                 def _flownet_s(im1, im2, flow=None):
@@ -206,7 +206,7 @@ def flownet_c_features(im, channel_mult=1, reuse=None):
         return conv1, conv2, conv3
 
 
-def flownet_c(conv3_a, conv3_b, conv2_a, channel_mult=1, full_res=False):
+def flownet_c(conv3_a, conv3_b, conv2_a, channel_mult=1, full_res=False, conv1_a=None, input_a=None):
     """Given two images, returns flow predictions in decreasing resolution.
 
     Uses FlowNetCorr.
@@ -233,5 +233,6 @@ def flownet_c(conv3_a, conv3_b, conv2_a, channel_mult=1, full_res=False):
         conv6_1 = slim.conv2d(conv6, int(1024 * m), 3, stride=1, scope='conv6_1')
 
         res = _flownet_upconv(conv6_1, conv5_1, conv4_1, conv3_1, conv2_a,
-                              channel_mult=channel_mult, full_res=full_res)
+                              channel_mult=channel_mult, full_res=full_res, conv1=conv1_a,
+                              inputs=nhwc_to_nchw([input_a])[0])
         return nchw_to_nhwc(res)

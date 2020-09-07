@@ -22,8 +22,8 @@ def compute_losses(im1, im2, flow_fw, flow_bw, num_layer,
                    mask_occlusion='',
                    data_max_distance=1,
                    mask_type=''):
-    losses = {}
 
+    losses = {}
     im2_warped = image_warp(im2, flow_fw)
     im1_warped = image_warp(im1, flow_bw)
 
@@ -40,6 +40,7 @@ def compute_losses(im1, im2, flow_fw, flow_bw, num_layer,
         mask_fw = border_mask
         mask_bw = border_mask
 
+    #occlusion mask
     mag_sq = length_sq(flow_fw) + length_sq(flow_bw)
     flow_bw_warped = image_warp(flow_bw, flow_fw)
     flow_fw_warped = image_warp(flow_fw, flow_bw)
@@ -47,9 +48,12 @@ def compute_losses(im1, im2, flow_fw, flow_bw, num_layer,
     flow_diff_bw = flow_bw + flow_fw_warped
     occ_thresh = 0.01 * mag_sq + 0.5
 
-    if mask_type == 'linear':
-        fb_occ_fw = tf.minimum(length_sq(flow_diff_fw) / occ_thresh, 1.0)
-        fb_occ_bw = tf.minimum(length_sq(flow_diff_bw) / occ_thresh, 1.0)
+    if mask_type == 'None':
+        fb_occ_fw = tf.zeros_like(mask_fw, dtype=tf.float32)
+        fb_occ_bw = tf.zeros_like(mask_bw, dtype=tf.float32)
+    elif mask_type == 'linear':
+        fb_occ_fw = tf.cast(tf.clip_by_value((length_sq(flow_diff_fw) - occ_thresh) / occ_thresh, 0.0, 1.0), tf.float32)
+        fb_occ_bw = tf.cast(tf.clip_by_value((length_sq(flow_diff_bw) - occ_thresh) / occ_thresh, 0.0, 1.0), tf.float32)
     elif mask_type == 'binary':
         fb_occ_fw = tf.cast(length_sq(flow_diff_fw) > occ_thresh, tf.float32)
         fb_occ_bw = tf.cast(length_sq(flow_diff_bw) > occ_thresh, tf.float32)

@@ -46,14 +46,13 @@ class Input():
     stddev = 1 / 0.0039216
     mean = []
 
-    def __init__(self, data, num, batch_size, dims, layers, num_layers, mask_layers, *,
+    def __init__(self, data, num, batch_size, dims, layers, num_layers, *,
                  num_threads=1, normalize=True,
                  skipped_frames=False):
         assert len(dims) == 2
         self.data = data
         self.dims = dims
         self.layers = layers
-        self.mask_layers = mask_layers
         self.batch_size = batch_size
         self.num_threads = num_threads
         self.normalize = normalize
@@ -105,24 +104,16 @@ class Input():
             filenames_1 = list(filenames_1)
             filenames_2 = list(filenames_2)
 
-        input_1, mask_image_1 = read_png_image(filenames_1, self.layers, self.mask_layers, 1)
-        input_2, mask_image_2 = read_png_image(filenames_2, self.layers, self.mask_layers, 1)
+        input_1 = read_png_image(filenames_1, self.layers, 1)
+        input_2 = read_png_image(filenames_2, self.layers, 1)
 
         input_1 = tf.concat([x for x in input_1], axis=-1)
         input_2 = tf.concat([x for x in input_2], axis=-1)
 
-        height, width = self.dims
-        if mask_image_1 is None or mask_image_2 is None:
-            mask_image_1 = tf.ones([height, width], tf.float32)
-            mask_image_2 = tf.ones([height, width], tf.float32)
-        else:
-            mask_image_1 = self._preprocess_image(mask_image_1, len(self.mask_layers))
-            mask_image_2 = self._preprocess_image(mask_image_2, len(self.mask_layers))
-
         image_1 = self._preprocess_image(input_1, self.num_layers)
         image_2 = self._preprocess_image(input_2, self.num_layers)
 
-        return tf.shape(image_1), image_1, image_2, mask_image_1, mask_image_2
+        return tf.shape(image_1), image_1, image_2
 
     def get_normalization(self):
         #[104.920005, 110.1753, 114.785955]
@@ -130,7 +121,7 @@ class Input():
         return self.mean, self.stddev
 
 
-def read_png_image(filenames, layers, mask_layers, num_epochs=None):
+def read_png_image(filenames, layers, num_epochs=None):
     """Given a list of filenames, constructs a reader op for images."""
     image = []
     reader = tf.WholeFileReader()
@@ -147,17 +138,4 @@ def read_png_image(filenames, layers, mask_layers, num_epochs=None):
                 image_uint8 = tf.image.decode_png(value, channels=1)
             image_float32 = tf.cast(image_uint8, tf.float32)
             image.append(image_float32)
-    if mask_layers is not None and mask_layers in ['z_max_occlusions_cartesian']:
-        layer = '_' + mask_layers[0] + '.png'
-        filenames_with_layer = [i + layer for i in filenames]
-        filename_queue = tf.train.string_input_producer(filenames_with_layer,
-                                                        shuffle=False, capacity=len(filenames_with_layer))
-        _, value = reader.read(filename_queue)
-        image_uint8 = tf.image.decode_png(value, channels=1)
-        mask_image_float32 = tf.cast(image_uint8, tf.float32)
-
-        if mask_layers == 'z_max_occlusions_cartesian':
-            mask_image_float32 = 1.0 - mask_image_float32 / 255.0
-    else:
-        mask_image_float32 = None
-    return image, mask_image_float32
+    return image

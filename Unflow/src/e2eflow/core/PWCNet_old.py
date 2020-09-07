@@ -5,17 +5,17 @@ from .ops import CostVolumeLayer, WarpingLayer
 import numpy as np
 
 
-def pwcnet(im1, im2, backward_flow=False):
+def pwcnet(im1, im2, option='', backward_flow=False):
     num_batch, height, width, channels = tf.unstack(tf.shape(im1))
     flows_fw = []
     flows_bw = []
 
     def scoped_block():
-        with tf.variable_scope('pwcnet_features'):
+        with tf.variable_scope('pwc_features'):
             conv1 = pwc_encoder(im1)
             conv2 = pwc_encoder(im2, reuse=True)
 
-        with tf.variable_scope('pwcnet') as scope:
+        with tf.variable_scope('pwc') as scope:
             flow_fw = pwc_decoder(conv1, conv2, 4)
             flows_fw.append(flow_fw)
 

@@ -6,7 +6,6 @@ import numpy as np
 
 
 def pwcnet(im1, im2, option=[6, 5, 6, 'dense'], backward_flow=False):
-    num_batch, height, width, channels = tf.unstack(tf.shape(im1))
     flows_fw = []
     flows_bw = []
 
